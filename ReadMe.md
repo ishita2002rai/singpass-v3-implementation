@@ -432,10 +432,6 @@ Overrides key methods of `OpenIDConnectAuthenticator`:
 
 Without PAR, all sensitive parameters (state, nonce, PKCE, client assertion) go in the browser URL. PAR sends them server-to-server first — only a short-lived `request_uri` reference goes in the browser, keeping sensitive params out of browser history and logs.
 
-**Why is a relay server needed?**
-
-MockPass only returns `code` and `state` in its callback. WSO2 needs `sessionDataKey` as a separate parameter to resume the session. The relay extracts `sessionDataKey` from the `state` value and forwards it correctly to WSO2.
-
 **Why two keystores?**
 
 The signing key (`carbon.p12`) proves your identity to MockPass via the `client_assertion` JWT. The encryption key (`enc.p12`) decrypts the JWE-wrapped ID token — MockPass encrypts it with your registered public key so only you can read it.
@@ -444,17 +440,9 @@ The signing key (`carbon.p12`) proves your identity to MockPass via the `client_
 
 A new EC key pair is generated per session and lives only in memory. Even if an access token is intercepted, it cannot be used without the ephemeral private key — which is never stored anywhere.
 
-**Why is `client_assertion` generated twice?**
-
-Once for the PAR request and once for the token request. Each JWT has a 5-minute expiry — by the time the token request is made the original one would be expired. A fresh assertion is generated each time using the same long-lived signing key from `carbon.p12`.
-
 **What does `FAPI_CLIENT_JWKS_ENDPOINT` do?**
 
 It tells MockPass where to fetch your public JWKS. MockPass uses your public keys to verify `client_assertion` signatures and to encrypt the ID token so only you can decrypt it with your private key.
-
-**Why is `sessionDataKey` embedded in `state`?**
-
-MockPass only passes back whatever `state` value it received — it won't add extra parameters. By embedding `sessionDataKey` inside `state` as `state.sessionDataKey`, we piggyback the WSO2 session reference through MockPass's callback without MockPass needing to know about it.
 
 **What is different from Singpass v2?**
 
