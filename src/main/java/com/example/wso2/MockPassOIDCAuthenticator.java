@@ -1,44 +1,49 @@
 package com.example.wso2;
 
-import com.nimbusds.jose.*;
+import com.example.wso2.utils.MockPassUtils;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.crypto.ECDHDecrypter;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.EncryptedJWT;
-import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.Curve;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.oltu.oauth2.client.request.OAuthClientRequest;
 import org.apache.oltu.oauth2.client.response.OAuthAuthzResponse;
 import org.apache.oltu.oauth2.client.response.OAuthClientResponse;
+import org.apache.oltu.oauth2.common.exception.OAuthSystemException;
 import org.apache.oltu.oauth2.common.message.types.GrantType;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext;
 import org.wso2.carbon.identity.application.authentication.framework.exception.AuthenticationFailedException;
 import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticatorConstants;
 import org.wso2.carbon.identity.application.authenticator.oidc.OpenIDConnectAuthenticator;
 import org.wso2.carbon.identity.application.common.model.Property;
+import org.wso2.carbon.identity.application.common.util.IdentityApplicationConstants;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.*;
-import java.math.BigInteger;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.KeyPair;
 import java.security.interfaces.ECPrivateKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.spec.ECGenParameterSpec;
-import java.util.*;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Custom WSO2 OIDC authenticator implementing a FAPI-compliant flow for MockPass (Singpassv3).
+ * Custom WSO2 OIDC authenticator implementing a FAPI-compliant flow for MockPass (Singpass v3).
  *
  * <p>Security features:
  * <ul>
@@ -48,168 +53,197 @@ import java.util.*;
  *   <li>Private-key JWT client authentication (no shared secret)</li>
  *   <li>JWE  – Encrypted ID token (ECDH-ES, decrypted with local EC private key)</li>
  * </ul>
+ *
+ * <p>Constants are defined in {@link MockPassConstants}.
+ * Cryptographic and encoding helpers are in {@link MockPassUtils}.
  */
 public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
     private static final Log LOG = LogFactory.getLog(MockPassOIDCAuthenticator.class);
 
-    // ── Constants ─────────────────────────────────────────────────────────────
+    // ── Lazily-loaded keys (double-checked locking) ───────────────────────────
 
-    private static final String AUTHENTICATOR_NAME          = "MockPassOIDCAuthenticator";
-    private static final String AUTHENTICATOR_FRIENDLY_NAME = "MockPass OIDC Authenticator";
-
-    private static final String CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-
-    /** Context property keys */
-    private static final String CTX_EPHEMERAL_KEY  = "EPHEMERAL_KEY";
-    private static final String CTX_CODE_VERIFIER  = "CODE_VERIFIER";
-    private static final String CTX_STATE          = "STATE";
-    private static final String CTX_NONCE          = "NONCE";
-
-    /** Authenticator config parameter names */
-    private static final String PARAM_PAR_ENDPOINT              = "par_endpoint";
-    private static final String PARAM_SIGNING_KEYSTORE           = "signing_keystore";
-    private static final String PARAM_KEYSTORE_PASSWORD          = "keystore_password";
-    private static final String PARAM_KEY_ALIAS                  = "key_alias";
-    private static final String PARAM_ENCRYPTION_KEYSTORE        = "encryption_keystore";
-    private static final String PARAM_ENCRYPTION_KEYSTORE_PASS   = "encryption_keystore_password";
-    private static final String PARAM_ENCRYPTION_KEY_ALIAS       = "encryption_key_alias";
-
-    private static final String EC_CURVE      = "secp256r1";
-    private static final int    EC_COORD_SIZE = 32;             // bytes for P-256 coordinates
-    private static final long   JWT_TTL_MS    = 5 * 60 * 1000L; // 5 minutes
-    private static final long   DPOP_TTL_SEC  = 120L;           // 2 minutes
-
-    // ── Lazily-loaded keys (one load per authenticator instance) ──────────────
-
-    /** Guarded by {@code this}; loaded once from the signing keystore. */
+    /** EC private key used to sign client assertion JWTs; loaded once from the signing keystore. */
     private volatile ECPrivateKey signingKey;
 
-    /** Guarded by {@code this}; loaded once from the encryption keystore. */
+    /** EC private key used to decrypt JWE id_tokens; loaded once from the encryption keystore. */
     private volatile ECPrivateKey encryptionKey;
 
     // ── Identity ──────────────────────────────────────────────────────────────
 
     @Override
     public String getName() {
-        return AUTHENTICATOR_NAME;
+        return MockPassConstants.AUTHENTICATOR_NAME;
     }
 
     @Override
     public String getFriendlyName() {
-        return AUTHENTICATOR_FRIENDLY_NAME;
+        return MockPassConstants.AUTHENTICATOR_FRIENDLY_NAME;
     }
 
     // ── Configuration properties ──────────────────────────────────────────────
 
+    /**
+     * Returns the list of configuration properties exposed in the WSO2 management console
+     * for this authenticator. Inherits parent OIDC properties, removes the client secret
+     * field (not used in private_key_jwt flows), and appends the PAR endpoint property.
+     *
+     * @return {@link List} of {@link Property} objects defining the authenticator's UI fields.
+     */
     @Override
     public List<Property> getConfigurationProperties() {
+
         List<Property> properties = new ArrayList<>(
                 Optional.ofNullable(super.getConfigurationProperties()).orElse(Collections.emptyList())
         );
 
+        // Remove client secret – authentication is done via private_key_jwt, not a shared secret.
+        properties.removeIf(p ->
+                IdentityApplicationConstants.Authenticator.OIDC.CLIENT_SECRET.equals(p.getName()));
+
         Property par = new Property();
-        par.setName(PARAM_PAR_ENDPOINT);
-        par.setDisplayName("PAR Endpoint");
+        par.setName(MockPassConstants.PARAM_PAR_ENDPOINT);
+        par.setDisplayName(MockPassConstants.PAR_ENDPOINT_DISPLAY_NAME);
         par.setRequired(true);
-        par.setDescription("Pushed Authorization Request endpoint for FAPI flow");
+        par.setDescription(MockPassConstants.PAR_ENDPOINT_DESCRIPTION);
         properties.add(par);
 
         return properties;
     }
 
-    // =========================================================================
-    // STEP 1 – Initiate: PAR + PKCE + DPoP + redirect
-    // =========================================================================
-
+    /**
+     * Initiates the MockPass FAPI authentication flow using Pushed Authorization Requests (PAR).
+     *
+     * <p>Execution order:
+     * <ol>
+     *   <li>Generates an ephemeral EC key pair for DPoP binding.</li>
+     *   <li>Generates state, nonce, and PKCE code verifier / challenge.</li>
+     *   <li>Builds a DPoP proof JWT and a private_key_jwt client assertion.</li>
+     *   <li>Sends authorization parameters to the PAR endpoint (backchannel POST).</li>
+     *   <li>Redirects the browser to the authorization endpoint with only {@code client_id}
+     *       and the returned {@code request_uri}.</li>
+     * </ol>
+     *
+     * @param request  the incoming {@link HttpServletRequest} from the browser.
+     * @param response the {@link HttpServletResponse} used to issue the redirect.
+     * @param context  the {@link AuthenticationContext} that carries per-session properties.
+     * @throws AuthenticationFailedException if any step in the PAR flow or redirect fails.
+     */
     @Override
     protected void initiateAuthenticationRequest(HttpServletRequest request,
                                                  HttpServletResponse response,
                                                  AuthenticationContext context)
             throws AuthenticationFailedException {
 
-        LOG.info("Initiating MockPass authentication (PAR flow)");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("[MockPass] initiateAuthenticationRequest invoked");
+        }
 
         try {
             Map<String, String> props = context.getAuthenticatorProperties();
 
             String clientId      = props.get(OIDCAuthenticatorConstants.CLIENT_ID);
-            String parEndpoint   = props.get(PARAM_PAR_ENDPOINT);
+            String parEndpoint   = props.get(MockPassConstants.PARAM_PAR_ENDPOINT);
             String authEndpoint  = props.get(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
             String callback      = getCallbackUrl(props, context);
 
-            // 1a. Ephemeral EC key pair – reused for DPoP at /par and /token
-            KeyPair ephemeralKeyPair = generateEphemeralKeyPair();
-            context.setProperty(CTX_EPHEMERAL_KEY, ephemeralKeyPair);
+            KeyPair ephemeralKeyPair = MockPassUtils.generateEphemeralKeyPair();
+            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY, ephemeralKeyPair);
 
-            // 1b. State / nonce
-            String state   = UUID.randomUUID().toString();
-            String nonce   = UUID.randomUUID().toString();
+            String state      = UUID.randomUUID().toString();
+            String nonce      = UUID.randomUUID().toString();
             String stateValue = state + "." + context.getContextIdentifier();
-            context.setProperty(CTX_STATE, state);
-            context.setProperty(CTX_NONCE, nonce);
+            context.setProperty(MockPassConstants.CTX_STATE, state);
+            context.setProperty(MockPassConstants.CTX_NONCE, nonce);
 
-            // 1c. PKCE
-            String codeVerifier  = generateCodeVerifier();
-            String codeChallenge = computeCodeChallenge(codeVerifier);
-            context.setProperty(CTX_CODE_VERIFIER, codeVerifier);
+            String codeVerifier  = MockPassUtils.generateCodeVerifier();
+            String codeChallenge = MockPassUtils.computeCodeChallenge(codeVerifier);
+            context.setProperty(MockPassConstants.CTX_CODE_VERIFIER, codeVerifier);
 
-            // 1d. Security tokens
-            String dpop           = generateDPoP(parEndpoint, "POST", ephemeralKeyPair);
-            String clientAssertion = generateClientAssertionJwt(clientId, tokenEndpoint);
+            String keyAlias = getAuthenticatorConfig().getParameterMap()
+                    .get(MockPassConstants.PARAM_KEY_ALIAS);
+            String dpop            = MockPassUtils.generateDPoP(parEndpoint,
+                    MockPassConstants.HTTP_METHOD_POST, ephemeralKeyPair);
+            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
+                    clientId, tokenEndpoint, keyAlias, getSigningKey());
 
-            // 1e. Push authorization request
             String requestUri = pushAuthorizationRequest(
                     parEndpoint, clientId, callback, stateValue, nonce,
                     codeChallenge, clientAssertion, dpop
             );
 
-            // 1f. Redirect browser to authorization endpoint
             String authUrl = authEndpoint
-                    + "?client_id=" + encode(clientId)
-                    + "&request_uri=" + encode(requestUri);
+                    + "?" + MockPassConstants.PARAM_KEY_CLIENT_ID
+                    + "=" + MockPassUtils.encode(clientId)
+                    + "&" + MockPassConstants.PARAM_KEY_REQUEST_URI
+                    + "=" + MockPassUtils.encode(requestUri);
 
-            LOG.info("Redirecting to authorization endpoint");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("[MockPass] Redirecting to authorization endpoint: " + authEndpoint);
+            }
             response.sendRedirect(authUrl);
 
-        } catch (AuthenticationFailedException e) {
-            throw e;
-        } catch (Exception e) {
-            LOG.error("PAR flow failed", e);
-            throw new AuthenticationFailedException("Failed to initiate MockPass authentication", e);
+        } catch (GeneralSecurityException e) {
+            LOG.error("[MockPass] Security error during PAR flow initiation", e);
+            throw new AuthenticationFailedException(
+                    "Security error during MockPass authentication initiation", e);
+        } catch (JOSEException e) {
+            LOG.error("[MockPass] JWT/JWE error while building DPoP or client assertion during PAR initiation", e);
+            throw new AuthenticationFailedException(
+                    "JWT error during MockPass authentication initiation", e);
+        } catch (IOException e) {
+            LOG.error("[MockPass] Network or I/O error during PAR request", e);
+            throw new AuthenticationFailedException(
+                    "I/O error during MockPass PAR request", e);
         }
     }
 
-    // =========================================================================
-    // STEP 2 – Callback: canHandle
-    // =========================================================================
-
     /**
-     * Handles the authorization callback if both {@code code} and
-     * {@code sessionDataKey} are present, or falls back to the parent check.
+     * Determines whether this authenticator can handle the incoming callback request.
+     *
+     * <p>Returns {@code true} when both an authorization {@code code} and a
+     * {@code sessionDataKey} are present in the request, or when the parent
+     * class's own check passes.
+     *
+     * @param request the incoming {@link HttpServletRequest} from the browser callback.
+     * @return {@code true} if this authenticator should process the request; {@code false} otherwise.
      */
     @Override
     public boolean canHandle(HttpServletRequest request) {
-        String code           = request.getParameter("code");
-        String sessionDataKey = request.getParameter("sessionDataKey");
+
+        String code           = request.getParameter(MockPassConstants.PARAM_CODE);
+        String sessionDataKey = request.getParameter(MockPassConstants.PARAM_SESSION_DATA_KEY);
         boolean handled       = (code != null && sessionDataKey != null) || super.canHandle(request);
-        LOG.debug("canHandle=" + handled + " code=" + (code != null) + " sdk=" + (sessionDataKey != null));
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("[MockPass] canHandle=" + handled
+                    + " code=" + (code != null)
+                    + " sessionDataKey=" + (sessionDataKey != null));
+        }
         return handled;
     }
 
-    // =========================================================================
-    // STEP 3 – Process callback: validate state
-    // =========================================================================
-
+    /**
+     * Validates the {@code state} parameter returned by the authorization server against
+     * the value stored in context, then delegates to the parent to complete token exchange.
+     *
+     * <p>A mismatch between the returned and stored state values indicates a possible CSRF
+     * attack and causes an {@link AuthenticationFailedException} to be thrown immediately.
+     *
+     * @param request  the callback {@link HttpServletRequest} containing {@code code} and {@code state}.
+     * @param response the {@link HttpServletResponse}.
+     * @param context  the {@link AuthenticationContext} holding the original state value.
+     * @throws AuthenticationFailedException if state validation fails or the parent processing fails.
+     */
     @Override
     protected void processAuthenticationResponse(HttpServletRequest request,
                                                  HttpServletResponse response,
                                                  AuthenticationContext context)
             throws AuthenticationFailedException {
 
-        String returnedState = request.getParameter("state");
-        String originalState = (String) context.getProperty(CTX_STATE);
+        String returnedState = request.getParameter(MockPassConstants.PARAM_STATE);
+        String originalState = (String) context.getProperty(MockPassConstants.CTX_STATE);
 
         if (originalState != null && returnedState != null
                 && !originalState.equals(returnedState)) {
@@ -221,16 +255,25 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         super.processAuthenticationResponse(request, response, context);
     }
 
-    // =========================================================================
-    // STEP 4 – Build token request: code + PKCE + client assertion + DPoP
-    // =========================================================================
-
+    /**
+     * Builds the access token request body with PKCE, private_key_jwt client authentication,
+     * and a DPoP proof header bound to the session's ephemeral key pair.
+     *
+     * @param context       the {@link AuthenticationContext} containing the PKCE verifier,
+     *                      ephemeral key pair, and authenticator properties.
+     * @param authzResponse the {@link OAuthAuthzResponse} carrying the authorization code.
+     * @return an {@link OAuthClientRequest} populated with all required token request parameters
+     *         and a {@code DPoP} header.
+     * @throws AuthenticationFailedException if the token request cannot be constructed.
+     */
     @Override
     protected OAuthClientRequest getAccessTokenRequest(AuthenticationContext context,
                                                        OAuthAuthzResponse authzResponse)
             throws AuthenticationFailedException {
 
-        LOG.info("Building token request");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("[MockPass] getAccessTokenRequest invoked");
+        }
 
         try {
             Map<String, String> props = context.getAuthenticatorProperties();
@@ -238,11 +281,15 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             String clientId      = props.get(OIDCAuthenticatorConstants.CLIENT_ID);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
             String callback      = getCallbackUrl(props, context);
-            String codeVerifier  = (String) context.getProperty(CTX_CODE_VERIFIER);
-            KeyPair keyPair      = (KeyPair) context.getProperty(CTX_EPHEMERAL_KEY);
+            String codeVerifier  = (String) context.getProperty(MockPassConstants.CTX_CODE_VERIFIER);
+            KeyPair keyPair      = (KeyPair) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY);
 
-            String clientAssertion = generateClientAssertionJwt(clientId, tokenEndpoint);
-            String dpop            = generateDPoP(tokenEndpoint, "POST", keyPair);
+            String keyAlias = getAuthenticatorConfig().getParameterMap()
+                    .get(MockPassConstants.PARAM_KEY_ALIAS);
+            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
+                    clientId, tokenEndpoint, keyAlias, getSigningKey());
+            String dpop = MockPassUtils.generateDPoP(tokenEndpoint,
+                    MockPassConstants.HTTP_METHOD_POST, keyPair);
 
             OAuthClientRequest tokenRequest = OAuthClientRequest
                     .tokenLocation(tokenEndpoint)
@@ -250,24 +297,40 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                     .setRedirectURI(callback)
                     .setCode(authzResponse.getCode())
                     .setClientId(clientId)
-                    .setParameter("client_assertion_type", CLIENT_ASSERTION_TYPE)
-                    .setParameter("client_assertion", clientAssertion)
-                    .setParameter("code_verifier", codeVerifier)
+                    .setParameter(MockPassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE,
+                            MockPassConstants.CLIENT_ASSERTION_TYPE)
+                    .setParameter(MockPassConstants.PARAM_KEY_CLIENT_ASSERTION, clientAssertion)
+                    .setParameter(MockPassConstants.PARAM_KEY_CODE_VERIFIER, codeVerifier)
                     .buildBodyMessage();
 
-            tokenRequest.addHeader("DPoP", dpop);
+            tokenRequest.addHeader(MockPassConstants.HTTP_HEADER_DPOP, dpop);
             return tokenRequest;
 
-        } catch (Exception e) {
-            LOG.error("Failed to build token request", e);
+        } catch (OAuthSystemException e) {
+            LOG.error("[MockPass] OAuth system error while building token request", e);
             throw new AuthenticationFailedException("Token request construction failed", e);
+        } catch (GeneralSecurityException e) {
+            LOG.error("[MockPass] Security error while building token request", e);
+            throw new AuthenticationFailedException("Token request construction failed due to security error", e);
+        } catch (JOSEException e) {
+            LOG.error("[MockPass] JWT/JWE error while building DPoP or client assertion for token request", e);
+            throw new AuthenticationFailedException("Token request construction failed due to JWT error", e);
+        } catch (IOException e) {
+            LOG.error("[MockPass] I/O error reading signing keystore while building token request", e);
+            throw new AuthenticationFailedException("Token request construction failed due to keystore I/O error", e);
         }
     }
 
-    // =========================================================================
-    // STEP 5 – Decrypt JWE id_token
-    // =========================================================================
-
+    /**
+     * Intercepts the token response to decrypt the JWE-wrapped {@code id_token} before the
+     * parent class attempts to parse it. The decrypted signed JWT string is stored in context
+     * so that {@link #mapIdToken} can retrieve it without re-parsing the encrypted form.
+     *
+     * @param request the callback {@link HttpServletRequest}.
+     * @param context the {@link AuthenticationContext}.
+     * @return the {@link OAuthClientResponse} from the parent's token exchange (unchanged).
+     * @throws AuthenticationFailedException if JWE decryption fails.
+     */
     @Override
     protected OAuthClientResponse requestAccessToken(HttpServletRequest request,
                                                      AuthenticationContext context)
@@ -275,14 +338,29 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
         OAuthClientResponse tokenResponse = super.requestAccessToken(request, context);
 
-        String idToken = tokenResponse.getParam("id_token");
+        String idToken = tokenResponse.getParam(OIDCAuthenticatorConstants.ID_TOKEN);
         if (idToken != null) {
             try {
-                LOG.info("Decrypting JWE id_token");
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("[MockPass] Decrypting JWE id_token");
+                }
                 String decryptedIdToken = decryptIdToken(idToken);
                 context.setProperty(OIDCAuthenticatorConstants.ID_TOKEN, decryptedIdToken);
-            } catch (Exception e) {
+            } catch (ParseException e) {
+                LOG.error("[MockPass] Failed to parse encrypted id_token as JWE", e);
+                throw new AuthenticationFailedException("id_token decryption failed: unable to parse JWE", e);
+            } catch (JOSEException e) {
+                LOG.error("[MockPass] Failed to decrypt id_token JWE", e);
                 throw new AuthenticationFailedException("id_token decryption failed", e);
+            } catch (GeneralSecurityException e) {
+                // Covers KeyStoreException, NoSuchAlgorithmException, UnrecoverableKeyException, etc.
+                LOG.error("[MockPass] Security error while loading encryption key for id_token decryption", e);
+                throw new AuthenticationFailedException(
+                        "id_token decryption failed due to security error loading key", e);
+            } catch (IOException e) {
+                LOG.error("[MockPass] I/O error while loading encryption keystore for id_token decryption", e);
+                throw new AuthenticationFailedException(
+                        "id_token decryption failed due to keystore I/O error", e);
             }
         }
 
@@ -290,8 +368,14 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
     }
 
     /**
-     * Returns the pre-decrypted id_token stored in context, bypassing the
-     * parent's attempt to use the still-encrypted token from the response.
+     * Returns the pre-decrypted {@code id_token} stored in context, bypassing the parent's
+     * attempt to use the still-encrypted token from the token response.
+     *
+     * @param context       the {@link AuthenticationContext} holding the decrypted token.
+     * @param request       the callback {@link HttpServletRequest}.
+     * @param tokenResponse the raw {@link OAuthClientResponse} from the token endpoint.
+     * @return the decrypted signed JWT string, or the parent's result if none is stored in context.
+     * @throws AuthenticationFailedException if the parent's mapIdToken call fails.
      */
     @Override
     protected String mapIdToken(AuthenticationContext context,
@@ -303,66 +387,111 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         return (decrypted != null) ? decrypted : super.mapIdToken(context, request, tokenResponse);
     }
 
-    // =========================================================================
-    // Private helpers – PAR
-    // =========================================================================
-
     /**
-     * Sends the Pushed Authorization Request and returns the {@code request_uri}.
+     * Sends the Pushed Authorization Request (PAR) to the PAR endpoint as a backchannel
+     * HTTP POST and returns the {@code request_uri} from the server's JSON response.
      *
-     * @throws AuthenticationFailedException if the server responds with 4xx/5xx.
+     * @param parEndpoint     the URL of the PAR endpoint.
+     * @param clientId        the OAuth client identifier.
+     * @param callback        the registered redirect URI.
+     * @param state           the state value combining a random component and the session identifier.
+     * @param nonce           a random nonce value for replay protection.
+     * @param codeChallenge   the PKCE S256 code challenge derived from the verifier.
+     * @param clientAssertion the signed private_key_jwt for client authentication.
+     * @param dpop            the DPoP proof JWT bound to the PAR endpoint and POST method.
+     * @return the {@code request_uri} string returned by the PAR server.
+     * @throws AuthenticationFailedException if the server returns HTTP 4xx/5xx or the response
+     *                                       JSON does not contain a {@code request_uri} field.
+     * @throws IOException                   if a network or stream error occurs.
      */
-    private String pushAuthorizationRequest(String parEndpoint, String clientId,
-                                            String callback, String state,
-                                            String nonce, String codeChallenge,
-                                            String clientAssertion, String dpop)
-            throws Exception {
+    private String pushAuthorizationRequest(String parEndpoint,
+                                            String clientId,
+                                            String callback,
+                                            String state,
+                                            String nonce,
+                                            String codeChallenge,
+                                            String clientAssertion,
+                                            String dpop)
+            throws AuthenticationFailedException, IOException {
 
-        String body = "client_id="              + encode(clientId)
-                + "&redirect_uri="              + encode(callback)
-                + "&response_type=code"
-                + "&scope="                     + encode("openid uinfin")
-                + "&state="                     + encode(state)
-                + "&nonce="                     + encode(nonce)
-                + "&code_challenge="            + encode(codeChallenge)
-                + "&code_challenge_method=S256"
-                + "&client_assertion_type="     + encode(CLIENT_ASSERTION_TYPE)
-                + "&client_assertion="          + encode(clientAssertion);
+        String body = MockPassConstants.PARAM_KEY_CLIENT_ID
+                + "=" + MockPassUtils.encode(clientId)
+                + "&" + MockPassConstants.PARAM_KEY_REDIRECT_URI
+                + "=" + MockPassUtils.encode(callback)
+                + "&" + MockPassConstants.PARAM_KEY_RESPONSE_TYPE
+                + "=" + MockPassUtils.encode(MockPassConstants.RESPONSE_TYPE_CODE)
+                + "&" + MockPassConstants.PARAM_KEY_SCOPE
+                + "=" + MockPassUtils.encode(MockPassConstants.SCOPE_OPENID_UINFIN)
+                + "&" + MockPassConstants.PARAM_STATE
+                + "=" + MockPassUtils.encode(state)
+                + "&" + MockPassConstants.PARAM_KEY_NONCE
+                + "=" + MockPassUtils.encode(nonce)
+                + "&" + MockPassConstants.PARAM_KEY_CODE_CHALLENGE
+                + "=" + MockPassUtils.encode(codeChallenge)
+                + "&" + MockPassConstants.PARAM_KEY_CODE_CHALLENGE_METHOD
+                + "=" + MockPassUtils.encode(MockPassConstants.CODE_CHALLENGE_METHOD)
+                + "&" + MockPassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE
+                + "=" + MockPassUtils.encode(MockPassConstants.CLIENT_ASSERTION_TYPE)
+                + "&" + MockPassConstants.PARAM_KEY_CLIENT_ASSERTION
+                + "=" + MockPassUtils.encode(clientAssertion);
 
         byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
 
         HttpURLConnection conn = (HttpURLConnection) new URL(parEndpoint).openConnection();
         try {
-            conn.setRequestMethod("POST");
+            conn.setRequestMethod(MockPassConstants.HTTP_METHOD_POST);
             conn.setDoOutput(true);
-            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            conn.setRequestProperty("Content-Length", String.valueOf(bodyBytes.length));
-            conn.setRequestProperty("DPoP", dpop);
+            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_CONTENT_TYPE,
+                    MockPassConstants.CONTENT_TYPE_FORM);
+            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_CONTENT_LENGTH,
+                    String.valueOf(bodyBytes.length));
+            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_DPOP, dpop);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(bodyBytes);
             }
 
-            int status = conn.getResponseCode();
+            int status          = conn.getResponseCode();
             String responseBody = readBody(conn, status);
-            LOG.info("PAR response status=" + status);
+
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("[MockPass] PAR response status=" + status);
+            }
 
             if (status >= 400) {
                 throw new AuthenticationFailedException(
                         "PAR request failed with HTTP " + status + ": " + responseBody);
             }
 
-            return new JSONObject(responseBody).getString("request_uri");
+            try {
+                return new JSONObject(responseBody).getString(MockPassConstants.PARAM_KEY_REQUEST_URI);
+            } catch (JSONException e) {
+                LOG.error("[MockPass] PAR response JSON is missing 'request_uri' or is malformed. Response: "
+                        + responseBody, e);
+                throw new AuthenticationFailedException(
+                        "PAR response did not contain a valid 'request_uri'", e);
+            }
 
         } finally {
             conn.disconnect();
         }
     }
 
+    /**
+     * Reads the response body from an {@link HttpURLConnection}.
+     * Uses the error stream for HTTP 4xx/5xx responses, and the regular input stream otherwise.
+     *
+     * @param conn   the open {@link HttpURLConnection}.
+     * @param status the HTTP response status code.
+     * @return the full response body as a UTF-8 string, or an empty string if the stream is null.
+     * @throws IOException if an I/O error occurs while reading the stream.
+     */
     private String readBody(HttpURLConnection conn, int status) throws IOException {
+
         InputStream is = (status >= 400) ? conn.getErrorStream() : conn.getInputStream();
         if (is == null) return "";
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(is, StandardCharsets.UTF_8))) {
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
@@ -370,141 +499,24 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         }
     }
 
-    // =========================================================================
-    // Private helpers – PKCE
-    // =========================================================================
-
-    private String generateCodeVerifier() {
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-    }
-
-    private String computeCodeChallenge(String codeVerifier) throws NoSuchAlgorithmException {
-        byte[] hash = MessageDigest.getInstance("SHA-256")
-                .digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-    }
-
-    // =========================================================================
-    // Private helpers – Client assertion JWT
-    // =========================================================================
-
     /**
-     * Builds a signed JWT used as the client credential (private_key_jwt method).
-     * The audience is the token endpoint base (without "/token").
-     */
-    private String generateClientAssertionJwt(String clientId, String tokenEndpoint) throws Exception {
-        long now      = System.currentTimeMillis();
-        String keyAlias  = getAuthenticatorConfig().getParameterMap().get(PARAM_KEY_ALIAS);
-        String audience  = tokenEndpoint.replace("/token", "");
-
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .issuer(clientId)
-                .subject(clientId)
-                .audience(audience)
-                .issueTime(new Date(now))
-                .expirationTime(new Date(now + JWT_TTL_MS))
-                .jwtID(UUID.randomUUID().toString())
-                .build();
-
-        SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.ES256)
-                        .type(JOSEObjectType.JWT)
-                        .keyID(keyAlias)
-                        .build(),
-                claims
-        );
-        jwt.sign(new ECDSASigner(getSigningKey()));
-        return jwt.serialize();
-    }
-
-    // =========================================================================
-    // Private helpers – DPoP
-    // =========================================================================
-
-    /** Generates a fresh EC key pair on the P-256 curve for use as a DPoP key. */
-    private KeyPair generateEphemeralKeyPair() throws GeneralSecurityException {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(new ECGenParameterSpec(EC_CURVE));
-        return kpg.generateKeyPair();
-    }
-
-    /**
-     * Builds a DPoP proof JWT for the given HTTP method and endpoint URI.
+     * Decrypts a JWE-wrapped {@code id_token} and returns the compact serialization of the
+     * inner signed JWT so that the parent framework can verify it normally.
      *
-     * <p>The public key is embedded in the JWT header as a JWK so the server
-     * can verify possession without a prior key registration.
-     */
-    private String generateDPoP(String endpoint, String method, KeyPair keyPair) throws Exception {
-        long nowSec = System.currentTimeMillis() / 1000;
-
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim("htu", endpoint)
-                .claim("htm", method)
-                .issueTime(new Date(nowSec * 1000))
-                .expirationTime(new Date((nowSec + DPOP_TTL_SEC) * 1000))
-                .jwtID(UUID.randomUUID().toString())
-                .build();
-
-        ECKey publicJwk = buildPublicEcJwk((ECPublicKey) keyPair.getPublic());
-
-        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                .type(new JOSEObjectType("dpop+jwt"))
-                .jwk(publicJwk.toPublicJWK())
-                .build();
-
-        SignedJWT jwt = new SignedJWT(header, claims);
-        jwt.sign(new ECDSASigner((ECPrivateKey) keyPair.getPrivate()));
-        return jwt.serialize();
-    }
-
-    /**
-     * Converts a JDK {@link ECPublicKey} to a Nimbus {@link ECKey} (P-256).
+     * <p>MockPass wraps the id_token as {@code JWE( SignedJWT )} using ECDH-ES key agreement.
+     * After decryption, the payload must itself be a valid {@link SignedJWT}; otherwise an
+     * {@link IllegalStateException} is thrown.
      *
-     * <p>BigInteger coordinates may carry a leading sign byte; {@link #toUnsignedBytes}
-     * normalises them to exactly {@value #EC_COORD_SIZE} bytes.
+     * @param encryptedJwt the compact-serialized JWE string received in the token response.
+     * @return the compact-serialized inner {@link SignedJWT} string.
+     * @throws ParseException           if the encrypted JWT cannot be parsed as a JWE.
+     * @throws JOSEException            if decryption fails.
+     * @throws GeneralSecurityException if loading the encryption private key fails.
+     * @throws IOException              if the encryption keystore file cannot be read.
      */
-    private ECKey buildPublicEcJwk(ECPublicKey publicKey) {
-        java.security.spec.ECPoint point = publicKey.getW();
-        Base64.Encoder enc = Base64.getUrlEncoder().withoutPadding();
-        String x = enc.encodeToString(toUnsignedBytes(point.getAffineX(), EC_COORD_SIZE));
-        String y = enc.encodeToString(toUnsignedBytes(point.getAffineY(), EC_COORD_SIZE));
-        return new ECKey.Builder(Curve.P_256, new Base64URL(x), new Base64URL(y)).build();
-    }
+    private String decryptIdToken(String encryptedJwt)
+            throws ParseException, JOSEException, GeneralSecurityException, IOException {
 
-    /**
-     * Returns {@code value} as a fixed-length unsigned big-endian byte array.
-     *
-     * <p>{@link BigInteger#toByteArray()} may include a leading 0x00 sign byte
-     * when the MSB is set. This method strips or pads to produce exactly
-     * {@code size} bytes, which is required by the JWK spec for curve coordinates.
-     */
-    private byte[] toUnsignedBytes(BigInteger value, int size) {
-        byte[] src    = value.toByteArray();
-        byte[] result = new byte[size];
-        if (src.length >= size) {
-            // Copy the least-significant `size` bytes (strips any leading sign byte)
-            System.arraycopy(src, src.length - size, result, 0, size);
-        } else {
-            // Right-align with zero padding
-            System.arraycopy(src, 0, result, size - src.length, src.length);
-        }
-        return result;
-    }
-
-    // =========================================================================
-    // Private helpers – JWE decryption
-    // =========================================================================
-
-    /**
-     * Decrypts a JWE-wrapped id_token and returns the inner signed JWT string.
-     *
-     * <p>MockPass wraps the id_token as: JWE( SignedJWT ).  After ECDH-ES
-     * decryption the payload is itself a signed JWT which the framework can
-     * verify normally.
-     */
-    private String decryptIdToken(String encryptedJwt) throws Exception {
         EncryptedJWT jwe = EncryptedJWT.parse(encryptedJwt);
         jwe.decrypt(new ECDHDecrypter(getEncryptionKey()));
         SignedJWT inner = jwe.getPayload().toSignedJWT();
@@ -514,74 +526,61 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         return inner.serialize();
     }
 
-    // =========================================================================
-    // Private helpers – Key loading (double-checked locking)
-    // =========================================================================
+    /**
+     * Returns the EC private key used for signing client assertion JWTs, loading it from the
+     * configured signing keystore on first access using double-checked locking.
+     *
+     * @return the {@link ECPrivateKey} for client assertion signing.
+     * @throws GeneralSecurityException if the keystore cannot be loaded, the alias is not found,
+     *                                   or the recovered key is not an {@link ECPrivateKey}.
+     * @throws IOException              if the keystore file cannot be read.
+     */
+    private ECPrivateKey getSigningKey() throws GeneralSecurityException, IOException {
 
-    private ECPrivateKey getSigningKey() throws Exception {
         if (signingKey == null) {
             synchronized (this) {
                 if (signingKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
-                    signingKey = loadPrivateKey(
-                            p.get(PARAM_SIGNING_KEYSTORE),
-                            p.get(PARAM_KEYSTORE_PASSWORD),
-                            p.get(PARAM_KEY_ALIAS));
-                    LOG.info("Signing key loaded");
+                    signingKey = MockPassUtils.loadPrivateKey(
+                            p.get(MockPassConstants.PARAM_SIGNING_KEYSTORE),
+                            p.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD),
+                            p.get(MockPassConstants.PARAM_KEY_ALIAS));
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[MockPass] Signing key loaded from keystore alias: "
+                                + p.get(MockPassConstants.PARAM_KEY_ALIAS));
+                    }
                 }
             }
         }
         return signingKey;
     }
 
-    private ECPrivateKey getEncryptionKey() throws Exception {
+    /**
+     * Returns the EC private key used for decrypting JWE id_tokens, loading it from the
+     * configured encryption keystore on first access using double-checked locking.
+     *
+     * @return the {@link ECPrivateKey} for id_token decryption.
+     * @throws GeneralSecurityException if the keystore cannot be loaded, the alias is not found,
+     *                                   or the recovered key is not an {@link ECPrivateKey}.
+     * @throws IOException              if the keystore file cannot be read.
+     */
+    private ECPrivateKey getEncryptionKey() throws GeneralSecurityException, IOException {
+
         if (encryptionKey == null) {
             synchronized (this) {
                 if (encryptionKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
-                    encryptionKey = loadPrivateKey(
-                            p.get(PARAM_ENCRYPTION_KEYSTORE),
-                            p.get(PARAM_ENCRYPTION_KEYSTORE_PASS),
-                            p.get(PARAM_ENCRYPTION_KEY_ALIAS));
-                    LOG.info("Encryption key loaded");
+                    encryptionKey = MockPassUtils.loadPrivateKey(
+                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEYSTORE),
+                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEYSTORE_PASS),
+                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS));
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("[MockPass] Encryption key loaded from keystore alias: "
+                                + p.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS));
+                    }
                 }
             }
         }
         return encryptionKey;
-    }
-
-    /**
-     * Loads an EC private key from a PKCS12 keystore on the local filesystem.
-     *
-     * @param keystoreFile path relative to {@code carbon.home}
-     * @param password     keystore and key password
-     * @param alias        key alias within the keystore
-     */
-    private ECPrivateKey loadPrivateKey(String keystoreFile, String password, String alias)
-            throws Exception {
-
-        String carbonHome  = System.getProperty("carbon.home");
-        String keystorePath = carbonHome + keystoreFile;
-        LOG.info("Loading keystore: " + keystorePath + " alias=" + alias);
-
-        KeyStore ks = KeyStore.getInstance("PKCS12");
-        try (FileInputStream fis = new FileInputStream(keystorePath)) {
-            ks.load(fis, password.toCharArray());
-            Key key = ks.getKey(alias, password.toCharArray());
-            if (!(key instanceof ECPrivateKey)) {
-                throw new IllegalStateException(
-                        "Key '" + alias + "' in " + keystorePath + " is not an ECPrivateKey");
-            }
-            return (ECPrivateKey) key;
-        }
-    }
-
-    // =========================================================================
-    // Utilities
-    // =========================================================================
-
-    /** URL-encodes a value using UTF-8. */
-    private static String encode(String value) throws UnsupportedEncodingException {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
     }
 }
