@@ -95,7 +95,7 @@ public final class MockPassConstants {
     // ── State format ──────────────────────────────────────────────────────────────
 
     public static final String STATE_DELIMITER        = ".";
-    public static final String STATE_OIDC_SUFFIX      = ".OIDC";
+    public static final String STATE_SINGPASSV3_SUFFIX = ".OIDC";
     public static final String STATE_DELIMITER_REGEX = "\\.";
 
     // ── PAR HTTP timeouts ─────────────────────────────────────────────────────────
