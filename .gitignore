@@ -55,4 +55,4 @@ jwks.json
 *.tmp
 
 # Node (for your JWKS script)
-node_modules/
+node_modules/mockpass-relay/
