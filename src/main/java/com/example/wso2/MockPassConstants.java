@@ -29,7 +29,6 @@ public final class MockPassConstants {
 
     // ── Request / response parameter names ───────────────────────────────────
 
-    public static final String PARAM_SESSION_DATA_KEY = "sessionDataKey";
     public static final String PARAM_STATE            = "state";
     public static final String PARAM_CODE             = "code";
 
@@ -79,7 +78,6 @@ public final class MockPassConstants {
     public static final String CTX_EPHEMERAL_KEY = "EPHEMERAL_KEY";
     public static final String CTX_CODE_VERIFIER = "CODE_VERIFIER";
     public static final String CTX_STATE         = "STATE";
-    public static final String CTX_NONCE         = "NONCE";
 
     // ── System properties ─────────────────────────────────────────────────────
 
@@ -93,4 +91,17 @@ public final class MockPassConstants {
     public static final int    EC_COORD_SIZE    = 32;
     public static final long   JWT_TTL_MS       = 5 * 60 * 1000L;
     public static final long   DPOP_TTL_SEC     = 120L;
+
+    // ── State format ──────────────────────────────────────────────────────────────
+
+    public static final String STATE_DELIMITER        = ".";
+    public static final String STATE_OIDC_SUFFIX      = ".OIDC";
+    public static final String STATE_DELIMITER_REGEX = "\\.";
+
+    // ── PAR HTTP timeouts ─────────────────────────────────────────────────────────
+    public static final int PAR_CONNECT_TIMEOUT_MS = 5000;
+    public static final int PAR_READ_TIMEOUT_MS    = 10000;
+
+    // ── Nonce ─────────────────────────────────────────────────────────────────────
+    public static final String OIDC_FEDERATION_NONCE  = "oidc_federation_nonce";
 }

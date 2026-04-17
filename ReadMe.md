@@ -19,12 +19,11 @@ It extends WSO2's built-in `OpenIDConnectAuthenticator` and adds the full securi
 - [Step 5: Generate JWKS](#step-5-generate-jwks)
 - [Step 6: Host JWKS](#step-6-host-jwks)
 - [Step 7: Start MockPass](#step-7-start-mockpass-singpass-v3)
-- [Step 8: Start Relay Server](#step-8-start-relay-server)
-- [Step 9: Build the Project](#step-9-build-the-project)
-- [Step 10: Deploy to WSO2](#step-10-deploy-to-wso2)
-- [Step 11: Start WSO2 Server](#step-11-start-wso2-server)
-- [Step 12: Verify Custom Authenticator](#step-12-verify-custom-authenticator)
-- [Step 13: Configure Connection in WSO2 Console](#step-13-configure-connection-in-wso2-console)
+- [Step 8: Build the Project](#step-8-build-the-project)
+- [Step 9: Deploy to WSO2](#step-9-deploy-to-wso2)
+- [Step 10: Start WSO2 Server](#step-10-start-wso2-server)
+- [Step 11: Verify Custom Authenticator](#step-11-verify-custom-authenticator)
+- [Step 12: Configure Connection in WSO2 Console](#step-12-configure-connection-in-wso2-console)
 - [Module Summary](#module-summary)
 - [FAQ](#faq)
 
@@ -36,14 +35,12 @@ It extends WSO2's built-in `OpenIDConnectAuthenticator` and adds the full securi
 singpass-v3-implementation/
 ├── src/
 │   └── main/java/com/example/wso2/
-│       └── internal/
-│           ├── CustomAuthenticatorServiceComponent.java  ← OSGi registration
-│           ├── JWTUtil.java                              ← JWT helpers
-│           └── MockPassOIDCAuthenticator.java            ← custom authenticator
-├── mockpass-relay/
-│   ├── index.js                                          ← relay server
-│   ├── package.json
-│   └── package-lock.json
+│       ├── internal/
+│       │   └── CustomAuthenticatorServiceComponent.java  ← OSGi registration
+│       ├── utils/
+│       │   └── MockPassUtils.java                        ← cryptographic helpers
+│       ├── MockPassConstants.java                        ← shared constants
+│       └── MockPassOIDCAuthenticator.java                ← custom authenticator
 ├── generate-jwks.js                                      ← JWKS export script
 ├── pom.xml
 └── .gitignore
@@ -86,7 +83,8 @@ singpass-v3-implementation/
 2. WSO2 calls initiateAuthenticationRequest()
         │
         generates:
-          - state, nonce
+          - state = sessionDataKey.OIDC
+          - nonce
           - codeVerifier, codeChallenge (PKCE)
           - ephemeral EC key pair (DPoP)
           - clientAssertion (signed JWT)
@@ -106,24 +104,24 @@ singpass-v3-implementation/
 3. User logs in on MockPass login page
         │
         ▼
-4. MockPass redirects to Relay
-        http://localhost:3000/callback
+4. MockPass redirects directly to WSO2
+        https://localhost:9443/commonauth
         ?code=abc123
-        &state=uuid.sessionDataKey
+        &state=sessionDataKey.OIDC
         │
-        Relay splits state on '.'
-        actualState    = "uuid"
-        sessionDataKey = "12bc982a-..."
+        WSO2 calls getContextIdentifier()
+          → splits state on '.'
+          → extracts sessionDataKey (before the dot)
+          → finds the correct auth session
         │
-        Relay redirects ──► WSO2 /commonauth
-                            ?code=abc123
-                            &state=uuid
-                            &sessionDataKey=12bc982a-...
+        WSO2 calls canHandle()
+          → checks state.endsWith(".OIDC") ✓
+          → this authenticator handles the request
         │
         ▼
 5. WSO2 calls processAuthenticationResponse()
         │
-        validates state == originalState  (CSRF check) ✓
+        validates state sessionDataKey == originalState  (CSRF check) ✓
         │
         POST ──► MockPass /token      (backchannel)
                  body: code, code_verifier, client_assertion, grant_type
@@ -316,19 +314,7 @@ npm start
 
 ---
 
-## Step 8: Start Relay Server
-
-The relay bridges MockPass's callback with WSO2's expected parameters. MockPass returns only `code` and `state` — the relay extracts `sessionDataKey` from `state` and forwards it to WSO2.
-
-```bash
-cd mockpass-relay
-node index.js
-# Relay running on http://localhost:3000
-```
-
----
-
-## Step 9: Build the Project
+## Step 8: Build the Project
 
 Run inside the IntelliJ terminal:
 
@@ -340,7 +326,7 @@ This generates the OSGi bundle JAR file in the `target/` directory.
 
 ---
 
-## Step 10: Deploy to WSO2
+## Step 9: Deploy to WSO2
 
 Copy the generated JAR into WSO2:
 
@@ -353,7 +339,7 @@ WSO2 will auto-deploy this authenticator on next startup.
 
 ---
 
-## Step 11: Start WSO2 Server
+## Step 10: Start WSO2 Server
 
 ```bash
 cd <IS_HOME>/bin
@@ -362,7 +348,7 @@ sh wso2server.sh
 
 ---
 
-## Step 12: Verify Custom Authenticator
+## Step 11: Verify Custom Authenticator
 
 Once the server has started:
 
@@ -373,7 +359,7 @@ Once the server has started:
 
 ---
 
-## Step 13: Configure Connection in WSO2 Console
+## Step 12: Configure Connection in WSO2 Console
 
 Click on `MockPassOIDCAuthenticator` and fill in the required fields:
 
@@ -391,7 +377,7 @@ Click on `MockPassOIDCAuthenticator` and fill in the required fields:
 | Field | Value |
 |---|---|
 | Client ID | `mock` (MockPass accepts any value) |
-| Callback URL | `http://localhost:3000/callback` |
+| Callback URL | `https://localhost:9443/commonauth` |
 
 **Additional Parameters:**
 
@@ -401,28 +387,22 @@ Click on `MockPassOIDCAuthenticator` and fill in the required fields:
 
 ---
 
-## Relay Server
-
-MockPass returns only `code` and `state` in its callback. WSO2 needs `sessionDataKey` as a separate URL parameter to continue the flow. The `sessionDataKey` is embedded inside `state` during the PAR request as `state.sessionDataKey` — the relay extracts it and forwards everything correctly to WSO2.
-
-
-
----
-
 ## Module Summary
 
 ### `MockPassOIDCAuthenticator`
 
 Overrides key methods of `OpenIDConnectAuthenticator`:
 
-| Method | What it does |
-|---|---|
-| `initiateAuthenticationRequest()` | Generates all security tokens, sends PAR request, redirects browser to MockPass |
-| `canHandle()` | Recognises MockPass callbacks — checks for both `code` and `sessionDataKey` |
-| `processAuthenticationResponse()` | Validates state (CSRF protection), then delegates to parent |
-| `getAccessTokenRequest()` | Builds token POST body with code, PKCE verifier, client assertion and DPoP header |
-| `requestAccessToken()` | Calls parent to send token request, then intercepts and decrypts the JWE ID token |
-| `mapIdToken()` | Returns pre-decrypted ID token from context so parent can validate nonce and extract claims |
+| Method | Why overridden | What it does |
+|---|---|---|
+| `initiateAuthenticationRequest()` | Parent does standard OIDC redirect; we need PAR flow | Generates all security tokens, sends PAR request backchannel, redirects browser to MockPass with only `client_id` and `request_uri` |
+| `getContextIdentifier()` | Parent splits state on `,` but Singpass rejects `,`; our delimiter is `.` | Splits state on `.` and extracts `sessionDataKey` (before the dot) so WSO2 can find the correct auth session |
+| `canHandle()` | Parent checks `state.split(",")[1].equals("OIDC")` which always fails for our state format | Checks `state.endsWith(".OIDC")` to correctly identify Singpass callbacks |
+| `processAuthenticationResponse()` | Need to validate state for CSRF before delegating to parent | Extracts `sessionDataKey` from returned state, compares against stored value, then delegates to parent for token exchange |
+| `getAccessTokenRequest()` | Parent uses client_secret; Singpass requires private_key_jwt + PKCE + DPoP | Builds token POST body with authorization code, PKCE verifier, client assertion JWT, and DPoP proof header |
+| `requestAccessToken()` | Parent cannot parse encrypted JWE id_token | Calls parent to exchange code for tokens, then intercepts and decrypts the JWE id_token, stores decrypted JWT in context |
+| `mapIdToken()` | Parent reads encrypted token from response; we need the decrypted one | Returns pre-decrypted id_token from context so parent can validate nonce and extract claims normally |
+| `getConfigurationProperties()` | Need to add PAR endpoint field and remove unused client secret field | Inherits parent fields, removes `ClientSecret`, adds `par_endpoint` |
 
 ---
 
@@ -444,8 +424,12 @@ A new EC key pair is generated per session and lives only in memory. Even if an 
 
 It tells MockPass where to fetch your public JWKS. MockPass uses your public keys to verify `client_assertion` signatures and to encrypt the ID token so only you can decrypt it with your private key.
 
+**Why is `,` not used as the state delimiter?**
+
+WSO2's default state format is `sessionDataKey,OIDC`. Singpass strictly validates the state parameter against the pattern `[A-Za-z0-9/+_-=.]+` — the `,` character is not in this pattern, causing the PAR request to be rejected with HTTP 400. We use `.` as the delimiter instead since it is valid per the Singpass spec, giving a state format of `sessionDataKey.OIDC`.
+
 **What is different from Singpass v2?**
 
-Singpass v3 (FAPI) adds several security layers on top of v2 — PAR keeps auth params out of the browser URL, PKCE prevents code interception, and DPoP binds tokens to the specific client making the request. The v3 flow also requires a relay server because of how `sessionDataKey` needs to be handled.
+Singpass v3 (FAPI) adds several security layers on top of v2 — PAR keeps auth params out of the browser URL, PKCE prevents code interception, and DPoP binds tokens to the specific client making the request.
 
 Happy testing! 🎉
