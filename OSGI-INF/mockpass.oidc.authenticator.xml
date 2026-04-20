@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<scr:component xmlns:scr="http://www.osgi.org/xmlns/scr/v1.3.0" name="mockpass.oidc.authenticator" immediate="true">
-  <service>
-    <provide interface="org.wso2.carbon.identity.application.authentication.framework.ApplicationAuthenticator"/>
-  </service>
-  <implementation class="com.example.wso2.MockPassOIDCAuthenticator"/>
-</scr:component>

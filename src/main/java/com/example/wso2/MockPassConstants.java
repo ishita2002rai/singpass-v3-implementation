@@ -77,8 +77,6 @@ public final class MockPassConstants {
 
     public static final String CTX_EPHEMERAL_KEY = "EPHEMERAL_KEY";
     public static final String CTX_CODE_VERIFIER = "CODE_VERIFIER";
-    public static final String CTX_STATE         = "STATE";
-
     // ── System properties ─────────────────────────────────────────────────────
 
     public static final String SYSTEM_PROPERTY_CARBON_HOME = "carbon.home";

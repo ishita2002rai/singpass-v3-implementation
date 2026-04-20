@@ -2,13 +2,9 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-.kotlin
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -38,22 +34,29 @@ build/
 ### Mac OS ###
 .DS_Store
 
-# 🔐 Keystores & certs (VERY IMPORTANT)
+# Build generated
+META-INF/
+OSGI-INF/
+
+# Keystores & certs
 *.p12
 *.jks
 *.pem
 *.key
 *.crt
 
-# 🔐 JWKS / generated keys
+# JWKS / generated keys
 jwks.json
 
-# 🔐 Logs
+# Logs
 *.log
 
-# 🔐 OS / temp
+# Temp
 *.tmp
 
-# Node (for your JWKS script)
+# Node
 node_modules/
 mockpass-relay/
+
+
+

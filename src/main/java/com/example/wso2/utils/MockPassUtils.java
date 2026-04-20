@@ -8,7 +8,6 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import org.apache.commons.logging.Log;
@@ -16,8 +15,6 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -47,7 +44,6 @@ public final class MockPassUtils {
     private MockPassUtils() {
         // Utility class – do not instantiate.
     }
-
     /**
      * Generates a cryptographically random PKCE code verifier using 32 bytes from
      * {@link SecureRandom}, Base64url-encoded without padding per RFC 7636.
@@ -152,7 +148,10 @@ public final class MockPassUtils {
             throws JOSEException {
 
         long now      = System.currentTimeMillis();
-        String audience = tokenEndpoint.replace(MockPassConstants.TOKEN_PATH_SEGMENT, "");
+
+        String audience = tokenEndpoint.endsWith(MockPassConstants.TOKEN_PATH_SEGMENT)
+                ? tokenEndpoint.substring(0, tokenEndpoint.length() - MockPassConstants.TOKEN_PATH_SEGMENT.length())
+                : tokenEndpoint;
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(clientId)
@@ -213,44 +212,15 @@ public final class MockPassUtils {
     }
 
     /**
-     * Converts a JDK {@link ECPublicKey} to a Nimbus {@link ECKey} on the P-256 curve.
-     *
-     * <p>{@link BigInteger} coordinates may carry a leading sign byte;
-     * {@link #toUnsignedBytes} normalises them to exactly {@value MockPassConstants#EC_COORD_SIZE} bytes.
+     * Converts a JDK {@link ECPublicKey} to a Nimbus {@link ECKey} on the P-256 curve
+     * using Nimbus built-in key construction.
      *
      * @param publicKey the JDK EC public key to convert.
-     * @return a Nimbus {@link ECKey} containing the public key x/y components.
+     * @return a Nimbus {@link ECKey} containing the public key components.
+     * @throws JOSEException if the key cannot be converted.
      */
-    public static ECKey buildPublicEcJwk(ECPublicKey publicKey) {
-
-        java.security.spec.ECPoint point = publicKey.getW();
-        Base64.Encoder enc = Base64.getUrlEncoder().withoutPadding();
-        String x = enc.encodeToString(toUnsignedBytes(point.getAffineX(), MockPassConstants.EC_COORD_SIZE));
-        String y = enc.encodeToString(toUnsignedBytes(point.getAffineY(), MockPassConstants.EC_COORD_SIZE));
-        return new ECKey.Builder(Curve.P_256, new Base64URL(x), new Base64URL(y)).build();
-    }
-
-    /**
-     * Returns a {@link BigInteger} value as a fixed-length unsigned big-endian byte array.
-     *
-     * <p>{@link BigInteger#toByteArray()} may include a leading {@code 0x00} sign byte when
-     * the most-significant bit is set. This method strips or pads to produce exactly
-     * {@code size} bytes, as required by the JWK specification for curve coordinates.
-     *
-     * @param value the coordinate value to convert.
-     * @param size  the required output length in bytes.
-     * @return a byte array of exactly {@code size} bytes representing the unsigned value.
-     */
-    public static byte[] toUnsignedBytes(BigInteger value, int size) {
-
-        byte[] src    = value.toByteArray();
-        byte[] result = new byte[size];
-        if (src.length >= size) {
-            System.arraycopy(src, src.length - size, result, 0, size);
-        } else {
-            System.arraycopy(src, 0, result, size - src.length, src.length);
-        }
-        return result;
+    public static ECKey buildPublicEcJwk(ECPublicKey publicKey) throws JOSEException {
+        return new ECKey.Builder(Curve.P_256, publicKey).build();
     }
 
     /**
@@ -260,11 +230,6 @@ public final class MockPassUtils {
      * @return the URL-encoded representation of {@code value}.
      */
     public static String encode(String value) {
-        try {
-            return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
-        } catch (UnsupportedEncodingException e) {
-            // UTF-8 is mandated by the Java spec and will never be absent.
-            throw new AssertionError("UTF-8 encoding unavailable", e);
-        }
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

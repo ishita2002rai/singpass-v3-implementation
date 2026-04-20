@@ -21,7 +21,7 @@ public class CustomAuthenticatorServiceComponent {
 
     @Activate
     protected void activate(ComponentContext ctxt) {
-        System.out.println("-----ACTIVATED--------");
+
         try {
             MockPassOIDCAuthenticator authenticator = new MockPassOIDCAuthenticator();
 
