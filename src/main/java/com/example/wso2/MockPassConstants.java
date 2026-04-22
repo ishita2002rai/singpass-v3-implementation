@@ -75,7 +75,8 @@ public final class MockPassConstants {
 
     // ── Context property keys ─────────────────────────────────────────────────
 
-    public static final String CTX_EPHEMERAL_KEY = "EPHEMERAL_KEY";
+    public static final String CTX_EPHEMERAL_KEY_PUBLIC    = "EPHEMERAL_KEY_PUBLIC";
+    public static final String CTX_EPHEMERAL_KEY_ENCRYPTED = "EPHEMERAL_KEY_ENCRYPTED";
     public static final String CTX_CODE_VERIFIER = "CODE_VERIFIER";
     // ── System properties ─────────────────────────────────────────────────────
 
@@ -86,7 +87,6 @@ public final class MockPassConstants {
     public static final String EC_CURVE         = "secp256r1";
     public static final String KEYSTORE_TYPE    = "PKCS12";
     public static final String KEY_ALGORITHM_EC = "EC";
-    public static final int    EC_COORD_SIZE    = 32;
     public static final long   JWT_TTL_MS       = 5 * 60 * 1000L;
     public static final long   DPOP_TTL_SEC     = 120L;
 
@@ -102,4 +102,10 @@ public final class MockPassConstants {
 
     // ── Nonce ─────────────────────────────────────────────────────────────────────
     public static final String OIDC_FEDERATION_NONCE  = "oidc_federation_nonce";
+
+    // ── JWKS servlet ──────────────────────────────────────────────────────────
+    public static final String JWKS_SERVLET_URL = "/mockpass/jwks.json";
+    public static final String JWKS_FILE_PATH = "/mockpassKeys/jwks.json";
+
+
 }

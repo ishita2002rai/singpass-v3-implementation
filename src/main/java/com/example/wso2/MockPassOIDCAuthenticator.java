@@ -14,6 +14,8 @@ import org.apache.oltu.oauth2.common.exception.OAuthSystemException;
 import org.apache.oltu.oauth2.common.message.types.GrantType;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.wso2.carbon.core.util.CryptoException;
+import org.wso2.carbon.core.util.CryptoUtil;
 import org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext;
 import org.wso2.carbon.identity.application.authentication.framework.exception.AuthenticationFailedException;
 import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticatorConstants;
@@ -78,6 +80,7 @@ import java.util.UUID;
 public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
     private static final Log LOG = LogFactory.getLog(MockPassOIDCAuthenticator.class);
+
 
     /**
      * EC private key used to sign client assertion JWTs sent to the token endpoint.
@@ -255,6 +258,8 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      *               access failed.</li>
      *           <li>{@link JOSEException} – DPoP JWT or client assertion signing failed.</li>
      *           <li>{@link IOException} – PAR HTTP request or browser redirect failed.</li>
+     *           <li>{@link CryptoException} – encrypting the ephemeral DPoP private key
+     *               for secure context storage failed.</li>
      *         </ul>
      */
     @Override
@@ -277,7 +282,14 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             String callback      = getCallbackUrl(props, context);
 
             KeyPair ephemeralKeyPair = MockPassUtils.generateEphemeralKeyPair();
-            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY, ephemeralKeyPair);
+
+            String encryptedPrivateKey = CryptoUtil.getDefaultCryptoUtil()
+                    .encryptAndBase64Encode(ephemeralKeyPair.getPrivate().getEncoded());
+
+            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY_PUBLIC,
+                    ephemeralKeyPair.getPublic().getEncoded());
+            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED,
+                    encryptedPrivateKey);
 
             String nonce      = UUID.randomUUID().toString();
             context.setProperty(getName() + MockPassConstants.OIDC_FEDERATION_NONCE, nonce);
@@ -316,6 +328,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         } catch (JOSEException e) {
             throw new AuthenticationFailedException(
                     "JWT signing failed during MockPass PAR initiation", e);
+        } catch (CryptoException e) {
+            throw new AuthenticationFailedException(
+                    "Failed to encrypt ephemeral DPoP private key for secure context storage", e);
         } catch (IOException e) {
             throw new AuthenticationFailedException(
                     "Network I/O error during MockPass PAR request or browser redirect", e);
@@ -342,8 +357,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      * @param context       the {@link AuthenticationContext} containing:
      *                      <ul>
      *                        <li>{@code CTX_CODE_VERIFIER} – the PKCE plain-text verifier.</li>
-     *                        <li>{@code CTX_EPHEMERAL_KEY} – the session's ephemeral EC key pair
-     *                            used to generate the DPoP proof.</li>
+     *                        <li>{@code CTX_EPHEMERAL_KEY_PUBLIC} – the session's ephemeral EC public key bytes.</li>
+     *                        <li>{@code CTX_EPHEMERAL_KEY_ENCRYPTED} – the encrypted ephemeral EC private key,
+     *                         encrypted via WSO2 {@code CryptoUtil} and stored as a Base64 string.</li>
      *                      </ul>
      * @param authzResponse the {@link OAuthAuthzResponse} carrying the authorization code
      *                      returned by Singpass in the callback URL.
@@ -371,15 +387,15 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
             String callback      = getCallbackUrl(props, context);
             String codeVerifier  = (String) context.getProperty(MockPassConstants.CTX_CODE_VERIFIER);
-            KeyPair keyPair      = (KeyPair) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY);
+            KeyPair keyPair = MockPassUtils.reconstructKeyPair(
+                    (byte[]) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY_PUBLIC),
+                    (String) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED)
+            );
 
-            String keyAlias = getAuthenticatorConfig().getParameterMap()
-                    .get(MockPassConstants.PARAM_KEY_ALIAS);
-            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
-                    clientId, tokenEndpoint, keyAlias, getSigningKey());
-            String dpop = MockPassUtils.generateDPoP(
-                    tokenEndpoint, MockPassConstants.HTTP_METHOD_POST, keyPair);
 
+            String keyAlias = getAuthenticatorConfig().getParameterMap().get(MockPassConstants.PARAM_KEY_ALIAS);
+            String clientAssertion = MockPassUtils.generateClientAssertionJwt(clientId, tokenEndpoint, keyAlias, getSigningKey());
+            String dpop = MockPassUtils.generateDPoP(tokenEndpoint, MockPassConstants.HTTP_METHOD_POST, keyPair);
             OAuthClientRequest tokenRequest = OAuthClientRequest
                     .tokenLocation(tokenEndpoint)
                     .setGrantType(GrantType.AUTHORIZATION_CODE)
@@ -407,6 +423,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             throw new AuthenticationFailedException(
                     "JWT signing failed for DPoP or client assertion: " +
                             "verify the EC private key is valid and uses the correct curve", e);
+        } catch (CryptoException e) {
+            throw new AuthenticationFailedException(
+                    "Failed to decrypt ephemeral DPoP private key from context", e);
         } catch (IOException e) {
             throw new AuthenticationFailedException(
                     "Failed to read signing keystore file: " +

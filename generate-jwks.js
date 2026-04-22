@@ -2,7 +2,7 @@ const fs = require("fs");
 const { importSPKI, exportJWK } = require("jose");
 
 (async () => {
-    // 🔐 SIGNING KEY
+    //SIGNING KEY
     const sigPem = fs.readFileSync("sig-pub.pem", "utf8");
     const sigKey = await exportJWK(await importSPKI(sigPem, "ES256"));
 
@@ -10,7 +10,7 @@ const { importSPKI, exportJWK } = require("jose");
     sigKey.alg = "ES256";
     sigKey.kid = "mockpass-key";
 
-    // 🔐 ENCRYPTION KEY
+    //ENCRYPTION KEY
     const encPem = fs.readFileSync("enc-pub.pem", "utf8");
     const encKey = await exportJWK(await importSPKI(encPem, "ES256"));
 
@@ -18,7 +18,7 @@ const { importSPKI, exportJWK } = require("jose");
     encKey.alg = "ECDH-ES+A256KW";
     encKey.kid = "mockpass-enc-key";
 
-    // 📦 COMBINE BOTH
+    //COMBINE BOTH
     const jwks = {
         keys: [sigKey, encKey]
     };

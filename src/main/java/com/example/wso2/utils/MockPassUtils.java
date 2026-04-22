@@ -12,22 +12,19 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.core.util.CryptoException;
+import org.wso2.carbon.core.util.CryptoUtil;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.Key;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.KeyStore;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
+import java.security.*;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Date;
 import java.util.UUID;
@@ -209,6 +206,31 @@ public final class MockPassUtils {
             }
             return (ECPrivateKey) key;
         }
+    }
+
+    /**
+     * Reconstructs an ephemeral EC KeyPair from a stored public key (raw bytes) and
+     * an encrypted private key (Base64-encoded ciphertext encrypted via CryptoUtil).
+     *
+     * <p>Mirrors the decrypt pattern used by WSO2's KeyStoreManager for keystore passwords.
+     *
+     * @param publicKeyBytes      the encoded public key bytes stored in context.
+     * @param encryptedPrivateKey the Base64-encoded encrypted private key stored in context.
+     * @return the reconstructed {@link KeyPair}.
+     * @throws GeneralSecurityException if key reconstruction fails.
+     * @throws CryptoException          if decryption fails.
+     */
+    public static KeyPair reconstructKeyPair(byte[] publicKeyBytes, String encryptedPrivateKey)
+            throws GeneralSecurityException, CryptoException {
+
+        byte[] privateKeyBytes = CryptoUtil.getDefaultCryptoUtil()
+                .base64DecodeAndDecrypt(encryptedPrivateKey);
+
+        KeyFactory keyFactory = KeyFactory.getInstance(MockPassConstants.KEY_ALGORITHM_EC);
+        PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
+        PublicKey publicKey  = keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
+
+        return new KeyPair(publicKey, privateKey);
     }
 
     /**

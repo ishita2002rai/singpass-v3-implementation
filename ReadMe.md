@@ -14,14 +14,14 @@ It extends WSO2's built-in `OpenIDConnectAuthenticator` and adds the full securi
 - [Authentication Flow](#authentication-flow)
 - [Step 1: Clone & Open the Project](#step-1-clone--open-the-project)
 - [Step 2: Generate EC Keys & Keystores](#step-2-generate-ec-keys--keystores)
-- [Step 3: Configure WSO2 Keystores](#step-3-configure-wso2-keystores)
-- [Step 4: Configure deployment.toml](#step-4-configure-deploymenttoml)
-- [Step 5: Generate JWKS](#step-5-generate-jwks)
-- [Step 6: Host JWKS](#step-6-host-jwks)
-- [Step 7: Start MockPass](#step-7-start-mockpass-singpass-v3)
-- [Step 8: Build the Project](#step-8-build-the-project)
-- [Step 9: Deploy to WSO2](#step-9-deploy-to-wso2)
-- [Step 10: Start WSO2 Server](#step-10-start-wso2-server)
+- [Step 3: Generate JWKS](#step-3-generate-jwks)
+- [Step 4: Configure WSO2 Directory Structure](#step-4-configure-wso2-directory-structure)
+- [Step 5: Configure deployment.toml](#step-5-configure-deploymenttoml)
+- [Step 6: Build the Project](#step-6-build-the-project)
+- [Step 7: Deploy to WSO2](#step-7-deploy-to-wso2)
+- [Step 8: Start WSO2 Server](#step-8-start-wso2-server)
+- [Step 9: Verify JWKS Endpoint](#step-9-verify-jwks-endpoint)
+- [Step 10: Start MockPass](#step-10-start-mockpass-singpass-v3)
 - [Step 11: Verify Custom Authenticator](#step-11-verify-custom-authenticator)
 - [Step 12: Configure Connection in WSO2 Console](#step-12-configure-connection-in-wso2-console)
 - [Module Summary](#module-summary)
@@ -36,7 +36,9 @@ singpass-v3-implementation/
 ├── src/
 │   └── main/java/com/example/wso2/
 │       ├── internal/
-│       │   └── CustomAuthenticatorServiceComponent.java  ← OSGi registration
+│       │   └── CustomAuthenticatorServiceComponent.java  ← OSGi registration + JWKS servlet
+│       ├── servlet/
+│       │   └── JwksServlet.java                          ← serves JWKS at /mockpass/jwks.json
 │       ├── utils/
 │       │   └── MockPassUtils.java                        ← cryptographic helpers
 │       ├── MockPassConstants.java                        ← shared constants
@@ -83,7 +85,7 @@ singpass-v3-implementation/
 2. WSO2 calls initiateAuthenticationRequest()
         │
         generates:
-          - state = sessionDataKey.OIDC
+          - state = sessionDataKey.SINGPASSV3
           - nonce
           - codeVerifier, codeChallenge (PKCE)
           - ephemeral EC key pair (DPoP)
@@ -107,7 +109,7 @@ singpass-v3-implementation/
 4. MockPass redirects directly to WSO2
         https://localhost:9443/commonauth
         ?code=abc123
-        &state=sessionDataKey.OIDC
+        &state=sessionDataKey.SINGPASSV3
         │
         WSO2 calls getContextIdentifier()
           → splits state on '.'
@@ -115,7 +117,7 @@ singpass-v3-implementation/
           → finds the correct auth session
         │
         WSO2 calls canHandle()
-          → checks state.endsWith(".OIDC") ✓
+          → checks state.endsWith(".SINGPASSV3") ✓
           → this authenticator handles the request
         │
         ▼
@@ -131,7 +133,7 @@ singpass-v3-implementation/
               "id_token": "eyJ..."    ← encrypted JWE
             }
         │
-        decrypts JWE id_token using enc.p12
+        decrypts JWE id_token using carbon.p12 (mockpass-enc-key alias)
         extracts inner SignedJWT
         validates nonce ✓
         extracts claims (NRIC / uinfin)
@@ -162,110 +164,84 @@ All further steps can be run from the IntelliJ terminal.
 
 ## Step 2: Generate EC Keys & Keystores
 
-Two EC keystores are required — one for **signing** and one for **encryption**.
+One PKCS12 keystore (`carbon.p12`) is required containing **two EC keypairs** — one for signing and one for encryption. Both are generated directly inside the keystore using `keytool`.
 
-### Signing Keystore (`carbon.p12`)
+### Generate signing keypair
 
 Signs the `client_assertion` JWT sent to MockPass at both the PAR and token endpoints.
 
 ```bash
-# Generate EC private key
-openssl ecparam -name prime256v1 -genkey -noout -out ec-private.key
-
-# Extract public key
-openssl ec -in ec-private.key -pubout -out ec-public.key
-
-# Generate self-signed certificate
-openssl req -new -x509 \
-  -key ec-private.key \
-  -out ec-cert.pem \
-  -days 365 \
-  -subj "/CN=mockpass-signing"
-
-# Package into PKCS12 keystore
-openssl pkcs12 -export \
-  -inkey ec-private.key \
-  -in ec-cert.pem \
-  -out carbon.p12 \
-  -name mockpass-key
+keytool -genkeypair \
+  -alias mockpass-key \
+  -keyalg EC \
+  -groupname secp256r1 \
+  -keystore carbon.p12 \
+  -storetype PKCS12 \
+  -storepass wso2carbon \
+  -dname "CN=mockpass-signing"
 ```
 
-### Encryption Keystore (`enc.p12`)
+### Generate encryption keypair
 
 Decrypts the JWE-wrapped ID token returned by MockPass. MockPass encrypts the ID token using your registered public key — only your private key can decrypt it.
 
 ```bash
-# Generate EC private key
-openssl ecparam -name prime256v1 -genkey -noout -out enc-key.pem
-
-# Extract public key
-openssl ec -in enc-key.pem -pubout -out enc-pub.pem
-
-# Generate self-signed certificate
-openssl req -new -x509 \
-  -key enc-key.pem \
-  -out enc-cert.pem \
-  -days 365 \
-  -subj "/CN=mockpass-encryption"
-
-# Package into PKCS12 keystore
-openssl pkcs12 -export \
-  -inkey enc-key.pem \
-  -in enc-cert.pem \
-  -out enc.p12 \
-  -name mockpass-enc-key
+keytool -genkeypair \
+  -alias mockpass-enc-key \
+  -keyalg EC \
+  -groupname secp256r1 \
+  -keystore carbon.p12 \
+  -storetype PKCS12 \
+  -storepass wso2carbon \
+  -dname "CN=mockpass-encryption"
 ```
 
-These commands generate EC key pairs, create self-signed certificates, and package them into `.p12` keystores for WSO2.
-
----
-
-## Step 3: Configure WSO2 Keystores
-
-Create a `mockpass-keystores` folder inside your WSO2 directory and copy both keystores there:
+### Verify both keypairs are in the keystore
 
 ```bash
-mkdir <IS_HOME>/mockpass-keystores
-cp carbon.p12 enc.p12 <IS_HOME>/mockpass-keystores/
+keytool -list -keystore carbon.p12 -storetype PKCS12 -storepass wso2carbon
 ```
 
-Final structure:
-
+Expected output:
 ```
-wso2is-7.2.0/
-└── mockpass-keystores/
-    ├── carbon.p12
-    └── enc.p12
+Your keystore contains 2 entries
+mockpass-enc-key, ...
+mockpass-key, ...
 ```
 
 ---
 
-## Step 4: Configure deployment.toml
+## Step 3: Generate JWKS
 
-Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
+The `jwks.json` contains your **public keys** and is served by WSO2 so MockPass can verify your client assertion signatures and encrypt the ID token for you.
 
-```toml
-[[authentication.custom_authenticator]]
-name = "MockPassOIDCAuthenticator"
-parameters.signing_keystore = "/mockpass-keystores/carbon.p12"
-parameters.keystore_password = "wso2carbon"
-parameters.key_alias = "mockpass-key"
-parameters.encryption_keystore = "/mockpass-keystores/enc.p12"
-parameters.encryption_keystore_password = "wso2carbon"
-parameters.encryption_key_alias = "mockpass-enc-key"
+First extract both public keys from `carbon.p12`:
+
+```bash
+# Export signing certificate
+keytool -exportcert \
+  -keystore carbon.p12 \
+  -storetype PKCS12 \
+  -storepass wso2carbon \
+  -alias mockpass-key \
+  -rfc \
+  -file sig-cert.pem
+
+# Export encryption certificate
+keytool -exportcert \
+  -keystore carbon.p12 \
+  -storetype PKCS12 \
+  -storepass wso2carbon \
+  -alias mockpass-enc-key \
+  -rfc \
+  -file enc-cert.pem
+
+# Extract public keys from certificates
+openssl x509 -in sig-cert.pem -pubkey -noout > sig-pub.pem
+openssl x509 -in enc-cert.pem -pubkey -noout > enc-pub.pem
 ```
 
-This tells WSO2:
-- Which key to use for signing the client assertion JWT
-- Which key to use for decrypting the JWE ID token
-
-> **Note:** Keystore paths are relative to `carbon.home` (the WSO2 IS root directory).
-
----
-
-## Step 5: Generate JWKS
-
-The `jwks.json` contains your **public keys** and is provided to MockPass so it can verify your client assertion signatures and encrypt the ID token for you.
+Then generate `jwks.json`:
 
 ```bash
 node generate-jwks.js
@@ -288,33 +264,63 @@ MockPass uses this to:
 
 ---
 
-## Step 6: Host JWKS
+## Step 4: Configure WSO2 Directory Structure
 
-MockPass needs to fetch your `jwks.json` over HTTP. Serve it on port 8080:
+Create the required folders inside your WSO2 directory and copy the keystore and JWKS there:
 
 ```bash
-npx http-server . -p 8080
-# JWKS available at http://127.0.0.1:8080/jwks.json
+# Copy keystore
+mkdir <IS_HOME>/mockpass-keystores
+cp carbon.p12 <IS_HOME>/mockpass-keystores/
+
+# Copy JWKS
+mkdir <IS_HOME>/mockpassKeys
+cp jwks.json <IS_HOME>/mockpassKeys/
+```
+
+Final structure:
+
+```
+wso2is-7.2.0/
+├── mockpass-keystores/
+│   └── carbon.p12        ← contains both signing and encryption keypairs
+└── mockpassKeys/
+    └── jwks.json         ← served by WSO2 at /mockpass/jwks.json
 ```
 
 ---
 
-## Step 7: Start MockPass (Singpass v3)
+## Step 5: Configure deployment.toml
 
-MockPass simulates the Singpass OIDC provider locally.
+Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 
-```bash
-cd mockpass
-export FAPI_CLIENT_JWKS_ENDPOINT=http://127.0.0.1:8080/jwks.json
-npm start
-# MockPass running on http://localhost:5156
+```toml
+[[authentication.custom_authenticator]]
+name = "MockPassOIDCAuthenticator"
+parameters.signing_keystore = "/mockpass-keystores/carbon.p12"
+parameters.keystore_password = "wso2carbon"
+parameters.key_alias = "mockpass-key"
+parameters.encryption_keystore = "/mockpass-keystores/carbon.p12"
+parameters.encryption_keystore_password = "wso2carbon"
+parameters.encryption_key_alias = "mockpass-enc-key"
+
+[[resource.access_control]]
+context = "(.*)/mockpass/jwks(.*)"
+secure = false
+http_method = "GET"
 ```
 
-`FAPI_CLIENT_JWKS_ENDPOINT` tells MockPass where to fetch your public keys for verifying client assertions and encrypting ID tokens.
+This tells WSO2:
+- Which alias to use for signing the client assertion JWT (`mockpass-key`)
+- Which alias to use for decrypting the JWE ID token (`mockpass-enc-key`)
+- Both aliases live in the same `carbon.p12` keystore
+- The JWKS endpoint is publicly accessible without authentication
+
+> **Note:** Keystore paths are relative to `carbon.home` (the WSO2 IS root directory).
 
 ---
 
-## Step 8: Build the Project
+## Step 6: Build the Project
 
 Run inside the IntelliJ terminal:
 
@@ -326,7 +332,7 @@ This generates the OSGi bundle JAR file in the `target/` directory.
 
 ---
 
-## Step 9: Deploy to WSO2
+## Step 7: Deploy to WSO2
 
 Copy the generated JAR into WSO2:
 
@@ -339,7 +345,7 @@ WSO2 will auto-deploy this authenticator on next startup.
 
 ---
 
-## Step 10: Start WSO2 Server
+## Step 8: Start WSO2 Server
 
 ```bash
 cd <IS_HOME>/bin
@@ -348,9 +354,37 @@ sh wso2server.sh
 
 ---
 
-## Step 11: Verify Custom Authenticator
+## Step 9: Verify JWKS Endpoint
 
-Once the server has started:
+Once the server has started, open in a browser:
+
+```
+https://localhost:9443/mockpass/jwks.json
+```
+
+You should see both public keys returned as JSON. This confirms:
+- The bundle activated successfully
+- The `JwksServlet` is registered and serving
+- The `deployment.toml` access control entry is applied
+
+---
+
+## Step 10: Start MockPass (Singpass v3)
+
+MockPass simulates the Singpass OIDC provider locally.
+
+```bash
+cd mockpass
+export FAPI_CLIENT_JWKS_ENDPOINT=https://localhost:9443/mockpass/jwks.json
+npm start
+# MockPass running on http://localhost:5156
+```
+
+`FAPI_CLIENT_JWKS_ENDPOINT` tells MockPass where to fetch your public keys for verifying client assertions and encrypting ID tokens. It points directly to the WSO2-hosted endpoint — no separate HTTP server needed.
+
+---
+
+## Step 11: Verify Custom Authenticator
 
 1. Open WSO2 Management Console: `https://localhost:9443/console`
 2. Login with admin credentials
@@ -397,12 +431,19 @@ Overrides key methods of `OpenIDConnectAuthenticator`:
 |---|---|---|
 | `initiateAuthenticationRequest()` | Parent does standard OIDC redirect; we need PAR flow | Generates all security tokens, sends PAR request backchannel, redirects browser to MockPass with only `client_id` and `request_uri` |
 | `getContextIdentifier()` | Parent splits state on `,` but Singpass rejects `,`; our delimiter is `.` | Splits state on `.` and extracts `sessionDataKey` (before the dot) so WSO2 can find the correct auth session |
-| `canHandle()` | Parent checks `state.split(",")[1].equals("OIDC")` which always fails for our state format | Checks `state.endsWith(".OIDC")` to correctly identify Singpass callbacks |
-| `processAuthenticationResponse()` | Need to validate state for CSRF before delegating to parent | Extracts `sessionDataKey` from returned state, compares against stored value, then delegates to parent for token exchange |
+| `canHandle()` | Parent checks `state.split(",")[1].equals("OIDC")` which always fails for our state format | Checks `state.endsWith(".SINGPASSV3")` to correctly identify Singpass callbacks |
 | `getAccessTokenRequest()` | Parent uses client_secret; Singpass requires private_key_jwt + PKCE + DPoP | Builds token POST body with authorization code, PKCE verifier, client assertion JWT, and DPoP proof header |
 | `requestAccessToken()` | Parent cannot parse encrypted JWE id_token | Calls parent to exchange code for tokens, then intercepts and decrypts the JWE id_token, stores decrypted JWT in context |
 | `mapIdToken()` | Parent reads encrypted token from response; we need the decrypted one | Returns pre-decrypted id_token from context so parent can validate nonce and extract claims normally |
 | `getConfigurationProperties()` | Need to add PAR endpoint field and remove unused client secret field | Inherits parent fields, removes `ClientSecret`, adds `par_endpoint` |
+
+### `JwksServlet`
+
+A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation, following the same pattern as WSO2's own `CommonAuthenticationServlet`. Serves `jwks.json` from `<IS_HOME>/mockpassKeys/jwks.json` at `GET /mockpass/jwks.json`.
+
+### `CustomAuthenticatorServiceComponent`
+
+OSGi DS component that activates the bundle. Registers both the `MockPassOIDCAuthenticator` as an `ApplicationAuthenticator` service and the `JwksServlet` via `HttpService`. Injects `HttpService` via `@Reference` — the same pattern used by WSO2's `FrameworkServiceComponent`.
 
 ---
 
@@ -412,9 +453,13 @@ Overrides key methods of `OpenIDConnectAuthenticator`:
 
 Without PAR, all sensitive parameters (state, nonce, PKCE, client assertion) go in the browser URL. PAR sends them server-to-server first — only a short-lived `request_uri` reference goes in the browser, keeping sensitive params out of browser history and logs.
 
-**Why two keystores?**
+**Why one keystore with two keypairs?**
 
-The signing key (`carbon.p12`) proves your identity to MockPass via the `client_assertion` JWT. The encryption key (`enc.p12`) decrypts the JWE-wrapped ID token — MockPass encrypts it with your registered public key so only you can read it.
+Both the signing key (`mockpass-key`) and encryption key (`mockpass-enc-key`) live in the same `carbon.p12` keystore. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token — MockPass encrypts it with your registered public key so only you can read it. Using a single keystore simplifies management — one file, one password, two aliases.
+
+**Why is the JWKS hosted inside WSO2 instead of a separate server?**
+
+The `JwksServlet` is registered as an OSGi servlet inside WSO2 at startup — no external process or port needed. MockPass fetches keys directly from `https://localhost:9443/mockpass/jwks.json`, the same host and port as the rest of the authentication flow.
 
 **Why is the DPoP key ephemeral?**
 
@@ -426,7 +471,7 @@ It tells MockPass where to fetch your public JWKS. MockPass uses your public key
 
 **Why is `,` not used as the state delimiter?**
 
-WSO2's default state format is `sessionDataKey,OIDC`. Singpass strictly validates the state parameter against the pattern `[A-Za-z0-9/+_-=.]+` — the `,` character is not in this pattern, causing the PAR request to be rejected with HTTP 400. We use `.` as the delimiter instead since it is valid per the Singpass spec, giving a state format of `sessionDataKey.OIDC`.
+WSO2's default state format is `sessionDataKey,OIDC`. Singpass strictly validates the state parameter against the pattern `[A-Za-z0-9/+_-=.]+` — the `,` character is not in this pattern, causing the PAR request to be rejected with HTTP 400. We use `.` as the delimiter instead since it is valid per the Singpass spec, giving a state format of `sessionDataKey.SINGPASSV3`.
 
 **What is different from Singpass v2?**
 

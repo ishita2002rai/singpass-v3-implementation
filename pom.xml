@@ -113,6 +113,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>3.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+
     </dependencies>
 
     <build>
@@ -140,9 +148,11 @@
                         </Export-Package>
 
                         <Import-Package>
+                            javax.servlet,
                             javax.servlet.http,
                             org.osgi.framework,
                             org.osgi.service.component,
+                            org.osgi.service.http,
                             org.wso2.carbon.identity.application.authentication.framework.*,
                             org.wso2.carbon.identity.application.common.*,
                             org.apache.commons.logging,
