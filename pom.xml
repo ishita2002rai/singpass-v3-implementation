@@ -44,7 +44,6 @@
             <url>https://maven.wso2.org/nexus/content/groups/wso2-public/</url>
         </repository>
 
-        <!-- Keep central -->
         <repository>
             <id>central</id>
             <url>https://repo.maven.apache.org/maven2</url>
@@ -54,7 +53,6 @@
 
     <dependencies>
 
-        <!-- Keep as provided -->
         <dependency>
             <groupId>org.wso2.carbon.identity</groupId>
             <artifactId>oidc-authenticator</artifactId>
@@ -89,7 +87,6 @@
             <version>8.20</version>
         </dependency>
 
-        <!-- OSGi -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.core</artifactId>
@@ -97,7 +94,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Oltu -->
         <dependency>
             <groupId>org.wso2.orbit.org.apache.oltu.oauth2</groupId>
             <artifactId>oltu</artifactId>
@@ -105,7 +101,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Logging -->
         <dependency>
             <groupId>commons-logging</groupId>
             <artifactId>commons-logging</artifactId>
@@ -120,6 +115,12 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.json.wso2</groupId>
+            <artifactId>json</artifactId>
+            <version>3.0.0.wso2v1</version>
+            <scope>provided</scope>
+        </dependency>
 
     </dependencies>
 

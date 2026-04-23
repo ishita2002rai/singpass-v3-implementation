@@ -58,5 +58,8 @@ jwks.json
 node_modules/
 mockpass-relay/
 
+package.json
+package-lock.json
+
 
 
