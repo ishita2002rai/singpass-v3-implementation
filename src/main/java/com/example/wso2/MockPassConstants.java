@@ -105,6 +105,11 @@ public final class MockPassConstants {
     public static final String JWKS_SERVLET_URL = "/mockpass/jwks.json";
     public static final String JWKS_FILE_PATH = "/mockpassKeys/jwks.json";
 
+    // ── JWKS generation ───────────────────────────────────────────────────────────
+// ── JWKS generation ───────────────────────────────────────────────────────────
+    public static final String SIG_ALGORITHM = "ES256";
+    public static final String ENC_ALGORITHM = "ECDH-ES+A256KW";
+
 
 
 

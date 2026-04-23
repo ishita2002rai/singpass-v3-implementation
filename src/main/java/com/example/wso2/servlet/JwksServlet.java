@@ -1,75 +1,117 @@
 package com.example.wso2.servlet;
 
 import com.example.wso2.MockPassConstants;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.KeyUse;
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.PrintWriter;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.interfaces.ECPublicKey;
 
 /**
- * Servlet that serves the JWKS (JSON Web Key Set) document at
- * {@code /mockpass/jwks.json}, allowing MockPass (Singpass v3) to fetch
- * the client's public keys for signature verification and ID token encryption.
+ * Servlet that dynamically builds and serves the JWKS (JSON Web Key Set) document
+ * at {@code /mockpass/jwks.json} by loading public keys directly from the configured
+ * PKCS12 keystore.
+ *
+ * <p>On each GET request this servlet:
+ * <ol>
+ *   <li>Loads the keystore from {@code ${carbon.home}} + the configured keystore path.</li>
+ *   <li>Extracts the signing public key under the configured signing alias.</li>
+ *   <li>Extracts the encryption public key under the configured encryption alias.</li>
+ *   <li>Converts both to JWK format using Nimbus JOSE.</li>
+ *   <li>Returns the combined JWKS JSON response.</li>
+ * </ol>
+ *
+ * <p>The keystore path, password, and key aliases are passed via constructor by
+ * {@link com.example.wso2.internal.CustomAuthenticatorServiceComponent}, which reads
+ * them from {@code deployment.toml} using {@code FileBasedConfigurationBuilder}.
+ * This eliminates hardcoded values and keeps the servlet in sync with the
+ * authenticator configuration.
  *
  * <p>Registered via OSGi {@code HttpService} in
  * {@link com.example.wso2.internal.CustomAuthenticatorServiceComponent#activate},
- * following the same pattern used by WSO2's own
- * {@code CommonAuthenticationServlet}.
- *
- * <p>The JWKS JSON file is read from the filesystem at:
- * <pre>
- *     ${carbon.home}/mockpassKeys/jwks.json
- * </pre>
- *
- * <p>MockPass uses the public keys in this document to:
- * <ul>
- *   <li>Verify the {@code client_assertion} JWT signature sent at the PAR
- *       and token endpoints.</li>
- *   <li>Encrypt the ID token returned to the client using the registered
- *       encryption public key.</li>
- * </ul>
+ * following the same pattern as WSO2's own {@code CommonAuthenticationServlet}.
  */
 public class JwksServlet extends HttpServlet {
 
+    private static final Log LOG = LogFactory.getLog(JwksServlet.class);
     private static final long serialVersionUID = 1L;
 
-    /**
-     * Handles HTTP GET requests by reading {@code jwks.json} from the
-     * filesystem and writing its contents directly to the HTTP response.
-     *
-     * <p>The full path is resolved by combining the {@code carbon.home}
-     * system property with {@link MockPassConstants#JWKS_FILE_PATH}:
-     * <pre>
-     *     carbon.home + /mockpassKeys/jwks.json
-     * </pre>
-     *
-     * @param request  the incoming {@link HttpServletRequest}.
-     * @param response the {@link HttpServletResponse} to write the JWKS JSON into.
-     * @throws IOException if the JWKS file cannot be read or the response
-     *                     stream cannot be written.
-     */
+    private final String keystorePath;
+    private final String keystorePassword;
+    private final String sigAlias;
+    private final String encAlias;
+
+    public JwksServlet(String keystorePath, String keystorePassword,
+                       String sigAlias, String encAlias) {
+        this.keystorePath     = keystorePath;
+        this.keystorePassword = keystorePassword;
+        this.sigAlias         = sigAlias;
+        this.encAlias         = encAlias;
+    }
+
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
 
-        String jwksPath = System.getProperty(MockPassConstants.SYSTEM_PROPERTY_CARBON_HOME)
-                + MockPassConstants.JWKS_FILE_PATH;
+        try {
+            String carbonHome = System.getProperty(MockPassConstants.SYSTEM_PROPERTY_CARBON_HOME);
 
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
-
-        try (InputStream in = Files.newInputStream(Paths.get(jwksPath));
-             OutputStream out = response.getOutputStream()) {
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
+            KeyStore keyStore = KeyStore.getInstance(MockPassConstants.KEYSTORE_TYPE);
+            try (FileInputStream fis = new FileInputStream(carbonHome + keystorePath)) {
+                keyStore.load(fis, keystorePassword.toCharArray());
             }
+
+            ECPublicKey sigPublicKey = (ECPublicKey) keyStore
+                    .getCertificate(sigAlias).getPublicKey();
+            ECKey sigJwk = new ECKey.Builder(Curve.P_256, sigPublicKey)
+                    .keyUse(KeyUse.SIGNATURE)
+                    .keyID(sigAlias)
+                    .algorithm(new com.nimbusds.jose.Algorithm(MockPassConstants.SIG_ALGORITHM))
+                    .build();
+
+            ECPublicKey encPublicKey = (ECPublicKey) keyStore
+                    .getCertificate(encAlias).getPublicKey();
+            ECKey encJwk = new ECKey.Builder(Curve.P_256, encPublicKey)
+                    .keyUse(KeyUse.ENCRYPTION)
+                    .keyID(encAlias)
+                    .algorithm(new com.nimbusds.jose.Algorithm(MockPassConstants.ENC_ALGORITHM))
+                    .build();
+
+            JSONArray keys = new JSONArray();
+            keys.add(sigJwk.toJSONObject());
+            keys.add(encJwk.toJSONObject());
+
+            JSONObject jwks = new JSONObject();
+            jwks.put("keys", keys);
+
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            PrintWriter writer = response.getWriter();
+            writer.write(jwks.toJSONString());
+            writer.flush();
+
+        } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
+            LOG.error("[MockPass] Failed to load keystore or certificates for JWKS generation", e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                    "Failed to load keystore");
+        } catch (IOException e) {
+            LOG.error("[MockPass] Failed to read keystore file for JWKS generation", e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                    "Failed to read keystore");
         }
     }
 }

@@ -12,8 +12,11 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.*;
 import org.osgi.service.http.HttpService;
 import org.wso2.carbon.identity.application.authentication.framework.ApplicationAuthenticator;
+import org.wso2.carbon.identity.application.authentication.framework.config.builder.FileBasedConfigurationBuilder;
+import org.wso2.carbon.identity.application.authentication.framework.config.model.AuthenticatorConfig;
 
 import javax.servlet.Servlet;
+import java.util.Map;
 
 /**
  * OSGi Declarative Services component that activates the MockPass OIDC
@@ -24,6 +27,9 @@ import javax.servlet.Servlet;
  *   <li>Registers {@link MockPassOIDCAuthenticator} as an
  *       {@link ApplicationAuthenticator} OSGi service, making it visible to
  *       WSO2's authentication framework.</li>
+ *   <li>Reads keystore configuration from {@code deployment.toml} via
+ *       {@link FileBasedConfigurationBuilder} and passes it to {@link JwksServlet}
+ *       so public keys are served dynamically from the keystore without a static file.</li>
  *   <li>Registers {@link JwksServlet} via the OSGi {@link HttpService} at
  *       {@code /mockpass/jwks.json}, serving the client's public JWKS so
  *       MockPass (Singpass v3) can fetch it without an external HTTP server.</li>
@@ -58,6 +64,18 @@ public class CustomAuthenticatorServiceComponent {
      * Activates the bundle by registering the authenticator service and the
      * JWKS servlet.
      *
+     * <p><b>Execution order:</b>
+     * <ol>
+     *   <li>Registers {@link MockPassOIDCAuthenticator} as an {@link ApplicationAuthenticator}
+     *       OSGi service so WSO2's authentication framework can discover it.</li>
+     *   <li>Reads keystore configuration ({@code keystore}, {@code keystore_password},
+     *       {@code key_alias}, {@code encryption_key_alias}) from {@code deployment.toml}
+     *       via {@link FileBasedConfigurationBuilder}.</li>
+     *   <li>Registers {@link JwksServlet} via {@link HttpService}, passing the keystore
+     *       config via constructor so the servlet can dynamically build the JWKS JSON
+     *       from the keystore on each request.</li>
+     * </ol>
+     *
      * @param ctxt the OSGi {@link ComponentContext} providing the
      *             {@link BundleContext} for service registration.
      */
@@ -71,8 +89,24 @@ public class CustomAuthenticatorServiceComponent {
                     .registerService(ApplicationAuthenticator.class, authenticator, null);
             log.info("[MockPass] Authenticator registered successfully");
 
+
+            AuthenticatorConfig config = FileBasedConfigurationBuilder.getInstance()
+                    .getAuthenticatorBean(MockPassConstants.AUTHENTICATOR_NAME);
+
+            if (config == null || config.getParameterMap() == null) {
+                log.error("[MockPass] Authenticator config not found — JWKS servlet NOT registered");
+                return;
+            }
+
+            Map<String, String> params  = config.getParameterMap();
+            String keystorePath         = params.get(MockPassConstants.PARAM_KEYSTORE);
+            String keystorePassword     = params.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD);
+            String sigAlias             = params.get(MockPassConstants.PARAM_KEY_ALIAS);
+            String encAlias             = params.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS);
+
             Servlet jwksServlet = new ContextPathServletAdaptor(
-                    new JwksServlet(), MockPassConstants.JWKS_SERVLET_URL);
+                    new JwksServlet(keystorePath, keystorePassword, sigAlias, encAlias),
+                    MockPassConstants.JWKS_SERVLET_URL);
             httpService.registerServlet(
                     MockPassConstants.JWKS_SERVLET_URL, jwksServlet, null, null);
             log.info("[MockPass] JWKS servlet registered at: " + MockPassConstants.JWKS_SERVLET_URL);
