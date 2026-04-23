@@ -698,7 +698,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      *
      * <p>Configuration parameters used:
      * <ul>
-     *   <li>{@link MockPassConstants#PARAM_SIGNING_KEYSTORE} – path relative to carbon.home.</li>
+     *   <li>{@link MockPassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
      *   <li>{@link MockPassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
      *   <li>{@link MockPassConstants#PARAM_KEY_ALIAS} – alias of the EC key entry.</li>
      * </ul>
@@ -714,7 +714,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                 if (signingKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
                     signingKey = MockPassUtils.loadPrivateKey(
-                            p.get(MockPassConstants.PARAM_SIGNING_KEYSTORE),
+                            p.get(MockPassConstants.PARAM_KEYSTORE),
                             p.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD),
                             p.get(MockPassConstants.PARAM_KEY_ALIAS));
                 }
@@ -732,8 +732,8 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      *
      * <p>Configuration parameters used:
      * <ul>
-     *   <li>{@link MockPassConstants#PARAM_ENCRYPTION_KEYSTORE} – path relative to carbon.home.</li>
-     *   <li>{@link MockPassConstants#PARAM_ENCRYPTION_KEYSTORE_PASS} – keystore and key password.</li>
+     *   <li>{@link MockPassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
+     *   <li>{@link MockPassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
      *   <li>{@link MockPassConstants#PARAM_ENCRYPTION_KEY_ALIAS} – alias of the EC key entry.</li>
      * </ul>
      *
@@ -748,8 +748,8 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                 if (encryptionKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
                     encryptionKey = MockPassUtils.loadPrivateKey(
-                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEYSTORE),
-                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEYSTORE_PASS),
+                            p.get(MockPassConstants.PARAM_KEYSTORE),
+                            p.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD),
                             p.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS));
                 }
             }

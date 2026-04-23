@@ -60,13 +60,10 @@ public final class MockPassConstants {
     // ── Authenticator config parameter names ──────────────────────────────────
 
     public static final String PARAM_PAR_ENDPOINT            = "par_endpoint";
-    public static final String PARAM_SIGNING_KEYSTORE        = "signing_keystore";
-    public static final String PARAM_KEYSTORE_PASSWORD       = "keystore_password";
-    public static final String PARAM_KEY_ALIAS               = "key_alias";
-    public static final String PARAM_ENCRYPTION_KEYSTORE     = "encryption_keystore";
-    public static final String PARAM_ENCRYPTION_KEYSTORE_PASS = "encryption_keystore_password";
-    public static final String PARAM_ENCRYPTION_KEY_ALIAS    = "encryption_key_alias";
-
+    public static final String PARAM_KEYSTORE             = "keystore";
+    public static final String PARAM_KEYSTORE_PASSWORD    = "keystore_password";
+    public static final String PARAM_KEY_ALIAS            = "key_alias";
+    public static final String PARAM_ENCRYPTION_KEY_ALIAS = "encryption_key_alias";
     // ── PAR endpoint UI metadata ──────────────────────────────────────────────
 
     public static final String PAR_ENDPOINT_DISPLAY_NAME = "PAR Endpoint";
@@ -78,6 +75,7 @@ public final class MockPassConstants {
     public static final String CTX_EPHEMERAL_KEY_PUBLIC    = "EPHEMERAL_KEY_PUBLIC";
     public static final String CTX_EPHEMERAL_KEY_ENCRYPTED = "EPHEMERAL_KEY_ENCRYPTED";
     public static final String CTX_CODE_VERIFIER = "CODE_VERIFIER";
+
     // ── System properties ─────────────────────────────────────────────────────
 
     public static final String SYSTEM_PROPERTY_CARBON_HOME = "carbon.home";
@@ -106,6 +104,9 @@ public final class MockPassConstants {
     // ── JWKS servlet ──────────────────────────────────────────────────────────
     public static final String JWKS_SERVLET_URL = "/mockpass/jwks.json";
     public static final String JWKS_FILE_PATH = "/mockpassKeys/jwks.json";
+
+
+
 
 
 }

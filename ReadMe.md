@@ -297,11 +297,9 @@ Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 ```toml
 [[authentication.custom_authenticator]]
 name = "MockPassOIDCAuthenticator"
-parameters.signing_keystore = "/mockpass-keystores/carbon.p12"
+parameters.keystore = "/mockpass-keystores/carbon.p12"
 parameters.keystore_password = "wso2carbon"
 parameters.key_alias = "mockpass-key"
-parameters.encryption_keystore = "/mockpass-keystores/carbon.p12"
-parameters.encryption_keystore_password = "wso2carbon"
 parameters.encryption_key_alias = "mockpass-enc-key"
 
 [[resource.access_control]]
@@ -313,7 +311,7 @@ http_method = "GET"
 This tells WSO2:
 - Which alias to use for signing the client assertion JWT (`mockpass-key`)
 - Which alias to use for decrypting the JWE ID token (`mockpass-enc-key`)
-- Both aliases live in the same `carbon.p12` keystore
+- Both aliases live in the same `carbon.p12` keystore — one keystore, one password, two aliases
 - The JWKS endpoint is publicly accessible without authentication
 
 > **Note:** Keystore paths are relative to `carbon.home` (the WSO2 IS root directory).
@@ -427,15 +425,15 @@ Click on `MockPassOIDCAuthenticator` and fill in the required fields:
 
 Overrides key methods of `OpenIDConnectAuthenticator`:
 
-| Method | Why overridden | What it does |
-|---|---|---|
-| `initiateAuthenticationRequest()` | Parent does standard OIDC redirect; we need PAR flow | Generates all security tokens, sends PAR request backchannel, redirects browser to MockPass with only `client_id` and `request_uri` |
-| `getContextIdentifier()` | Parent splits state on `,` but Singpass rejects `,`; our delimiter is `.` | Splits state on `.` and extracts `sessionDataKey` (before the dot) so WSO2 can find the correct auth session |
-| `canHandle()` | Parent checks `state.split(",")[1].equals("OIDC")` which always fails for our state format | Checks `state.endsWith(".SINGPASSV3")` to correctly identify Singpass callbacks |
-| `getAccessTokenRequest()` | Parent uses client_secret; Singpass requires private_key_jwt + PKCE + DPoP | Builds token POST body with authorization code, PKCE verifier, client assertion JWT, and DPoP proof header |
-| `requestAccessToken()` | Parent cannot parse encrypted JWE id_token | Calls parent to exchange code for tokens, then intercepts and decrypts the JWE id_token, stores decrypted JWT in context |
-| `mapIdToken()` | Parent reads encrypted token from response; we need the decrypted one | Returns pre-decrypted id_token from context so parent can validate nonce and extract claims normally |
-| `getConfigurationProperties()` | Need to add PAR endpoint field and remove unused client secret field | Inherits parent fields, removes `ClientSecret`, adds `par_endpoint` |
+| Method | Why overridden | What it does                                                                                                                                                                                                         |
+|---|---|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `initiateAuthenticationRequest()` | Parent does standard OIDC redirect; we need PAR flow | Generates all security tokens, encrypts the ephemeral DPoP private key via CryptoUtil and stores it in context, sends PAR request backchannel, redirects browser to MockPass with only `client_id` and `request_uri` |
+| `getContextIdentifier()` | Parent splits state on `,` but Singpass rejects `,`; our delimiter is `.` | Splits state on `.` and extracts `sessionDataKey` (before the dot) so WSO2 can find the correct auth session                                                                                                         |
+| `canHandle()` | Parent checks `state.split(",")[1].equals("OIDC")` which always fails for our state format | Checks `state.endsWith(".SINGPASSV3")` to correctly identify Singpass callbacks                                                                                                                                      |
+| `getAccessTokenRequest()` | Parent uses client_secret; Singpass requires private_key_jwt + PKCE + DPoP | Builds token POST body with authorization code, PKCE verifier, client assertion JWT, and DPoP proof header                                                                                                           |
+| `requestAccessToken()` | Parent cannot parse encrypted JWE id_token | Calls parent to exchange code for tokens, then intercepts and decrypts the JWE id_token, stores decrypted JWT in context                                                                                             |
+| `mapIdToken()` | Parent reads encrypted token from response; we need the decrypted one | Returns pre-decrypted id_token from context so parent can validate nonce and extract claims normally                                                                                                                 |
+| `getConfigurationProperties()` | Need to add PAR endpoint field and remove unused client secret field | Inherits parent fields, removes `ClientSecret`, adds `par_endpoint`                                                                                                                                                  |
 
 ### `JwksServlet`
 
@@ -455,7 +453,9 @@ Without PAR, all sensitive parameters (state, nonce, PKCE, client assertion) go 
 
 **Why one keystore with two keypairs?**
 
-Both the signing key (`mockpass-key`) and encryption key (`mockpass-enc-key`) live in the same `carbon.p12` keystore. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token — MockPass encrypts it with your registered public key so only you can read it. Using a single keystore simplifies management — one file, one password, two aliases.
+Both the signing key (`mockpass-key`) and encryption key (`mockpass-enc-key`) live in the same
+`carbon.p12` keystore — one file, one password, two aliases. The signing key proves your identity
+to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token.
 
 **Why is the JWKS hosted inside WSO2 instead of a separate server?**
 
@@ -463,11 +463,20 @@ The `JwksServlet` is registered as an OSGi servlet inside WSO2 at startup — no
 
 **Why is the DPoP key ephemeral?**
 
-A new EC key pair is generated per session and lives only in memory. Even if an access token is intercepted, it cannot be used without the ephemeral private key — which is never stored anywhere.
+A new EC key pair is generated per session. The private key is encrypted using WSO2's
+`CryptoUtil` before being stored in `AuthenticationContext` — it can only be decrypted
+by the same WSO2 instance. Even if an access token is intercepted, it cannot be used
+without this ephemeral private key.
 
 **What does `FAPI_CLIENT_JWKS_ENDPOINT` do?**
 
 It tells MockPass where to fetch your public JWKS. MockPass uses your public keys to verify `client_assertion` signatures and to encrypt the ID token so only you can decrypt it with your private key.
+
+**How is the ephemeral DPoP private key protected?**
+
+The ephemeral DPoP private key is encrypted using WSO2's internal `CryptoUtil` before being stored in
+`AuthenticationContext`. Even if the session is serialized to the database, the private key
+remains encrypted and can only be decrypted by the same WSO2 instance.
 
 **Why is `,` not used as the state delimiter?**
 
