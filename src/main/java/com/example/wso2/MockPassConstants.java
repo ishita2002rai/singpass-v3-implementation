@@ -102,8 +102,7 @@ public final class MockPassConstants {
     public static final String OIDC_FEDERATION_NONCE  = "oidc_federation_nonce";
 
     // ── JWKS servlet ──────────────────────────────────────────────────────────
-    public static final String JWKS_SERVLET_URL = "/mockpass/jwks.json";
-    public static final String JWKS_FILE_PATH = "/mockpassKeys/jwks.json";
+    public static final String JWKS_SERVLET_URL = "/singpass/jwks.json";
 
     // ── JWKS generation ───────────────────────────────────────────────────────────
     public static final String SIG_ALGORITHM = "ES256";

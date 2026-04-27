@@ -37,7 +37,7 @@ singpass-v3-implementation/
 │       ├── internal/
 │       │   └── CustomAuthenticatorServiceComponent.java  ← OSGi registration + JWKS servlet
 │       ├── servlet/
-│       │   └── JwksServlet.java                          ← dynamically serves JWKS at /mockpass/jwks.json
+│       │   └── JwksServlet.java                          ← dynamically serves JWKS at /singpass/jwks.json
 │       ├── utils/
 │       │   └── MockPassUtils.java                        ← cryptographic helpers
 │       ├── MockPassConstants.java                        ← shared constants
@@ -236,13 +236,13 @@ Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 ```toml
 [[authentication.custom_authenticator]]
 name = "MockPassOIDCAuthenticator"
-parameters.keystore = "/mockpass-keystores/carbon.p12"
+parameters.keystore = "/singpass-keystores/carbon.p12"
 parameters.keystore_password = "wso2carbon"
 parameters.key_alias = "mockpass-key"
 parameters.encryption_key_alias = "mockpass-enc-key"
 
 [[resource.access_control]]
-context = "(.*)/mockpass/jwks(.*)"
+context = "(.*)/singpass/jwks(.*)"
 secure = false
 http_method = "GET"
 ```
@@ -296,7 +296,7 @@ sh wso2server.sh
 Once the server has started, open in a browser:
 
 ```
-https://localhost:9443/mockpass/jwks.json
+https://localhost:9443/singpass/jwks.json
 ```
 
 You should see both public keys returned as JSON. This confirms:
@@ -312,7 +312,7 @@ MockPass simulates the Singpass OIDC provider locally.
 
 ```bash
 cd mockpass
-export FAPI_CLIENT_JWKS_ENDPOINT=https://localhost:9443/mockpass/jwks.json
+export FAPI_CLIENT_JWKS_ENDPOINT=https://localhost:9443/singpass/jwks.json
 npm start
 # MockPass running on http://localhost:5156
 ```
@@ -389,7 +389,7 @@ Overrides key methods of `OpenIDConnectAuthenticator`:
 
 ### `JwksServlet`
 
-A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation. On each GET request to `/mockpass/jwks.json`, it dynamically loads public keys from `carbon.p12`, converts them to JWK format using Nimbus JOSE, and returns the combined JWKS JSON — no static file involved. Keystore path, password, and aliases are passed via constructor from `CustomAuthenticatorServiceComponent`.
+A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation. On each GET request to `/singpass/jwks.json`, it dynamically loads public keys from `carbon.p12`, converts them to JWK format using Nimbus JOSE, and returns the combined JWKS JSON — no static file involved. Keystore path, password, and aliases are passed via constructor from `CustomAuthenticatorServiceComponent`.
 
 ### `CustomAuthenticatorServiceComponent`
 
@@ -409,7 +409,7 @@ Both the signing key (`mockpass-key`) and encryption key (`mockpass-enc-key`) li
 
 **Why is the JWKS hosted inside WSO2 instead of a separate server?**
 
-The `JwksServlet` is registered as an OSGi servlet inside WSO2 at startup — no external process or port needed. It dynamically builds the JWKS JSON by reading public keys directly from `carbon.p12` at request time, so no static `jwks.json` file is required. MockPass fetches keys directly from `https://localhost:9443/mockpass/jwks.json`, the same host and port as the rest of the authentication flow.
+The `JwksServlet` is registered as an OSGi servlet inside WSO2 at startup — no external process or port needed. It dynamically builds the JWKS JSON by reading public keys directly from `carbon.p12` at request time, so no static `jwks.json` file is required. MockPass fetches keys directly from `https://localhost:9443/singpass/jwks.json`, the same host and port as the rest of the authentication flow.
 
 **Why is the DPoP key ephemeral?**
 
