@@ -24,7 +24,7 @@ import javax.servlet.http.HttpServletResponse;
 
 /**
  * Servlet that dynamically builds and serves the JWKS (JSON Web Key Set) document
- * at {@code /mockpass/jwks.json} by loading public keys directly from the configured
+ * at {@code /singpass/jwks.json} by loading public keys directly from the configured
  * PKCS12 keystore.
  *
  * <p>On each GET request this servlet:

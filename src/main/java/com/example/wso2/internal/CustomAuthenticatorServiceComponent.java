@@ -38,7 +38,7 @@ import javax.servlet.Servlet;
  *       {@link FileBasedConfigurationBuilder} and passes it to {@link JwksServlet}
  *       so public keys are served dynamically from the keystore without a static file.</li>
  *   <li>Registers {@link JwksServlet} via the OSGi {@link HttpService} at
- *       {@code /mockpass/jwks.json}, serving the client's public JWKS so
+ *       {@code /singpass/jwks.json}, serving the client's public JWKS so
  *       MockPass (Singpass v3) can fetch it without an external HTTP server.</li>
  * </ol>
  *
@@ -47,7 +47,7 @@ import javax.servlet.Servlet;
  * {@code FrameworkServiceComponent} to register {@code CommonAuthenticationServlet}.
  */
 @Component(
-        name = "mockpass.oidc.authenticator.component",
+        name = "singpass.oidc.authenticator.component",
         immediate = true
 )
 public class CustomAuthenticatorServiceComponent {
