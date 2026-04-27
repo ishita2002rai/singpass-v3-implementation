@@ -109,8 +109,4 @@ public final class MockPassConstants {
     public static final String SIG_ALGORITHM = "ES256";
     public static final String ENC_ALGORITHM = "ECDH-ES+A256KW";
 
-
-
-
-
 }

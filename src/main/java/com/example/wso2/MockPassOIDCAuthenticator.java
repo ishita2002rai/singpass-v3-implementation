@@ -23,8 +23,6 @@ import org.wso2.carbon.identity.application.authenticator.oidc.OpenIDConnectAuth
 import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.application.common.util.IdentityApplicationConstants;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,6 +41,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 /**
  * Custom WSO2 OIDC authenticator implementing a FAPI-compliant Singpass v3 authentication flow.
@@ -141,6 +142,8 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
         properties.removeIf(p ->
                 IdentityApplicationConstants.Authenticator.OIDC.CLIENT_SECRET.equals(p.getName()));
+
+        properties.removeIf(p -> "IsBasicAuthEnabled".equals(p.getName()));
 
         Property par = new Property();
         par.setName(MockPassConstants.PARAM_PAR_ENDPOINT);
@@ -279,7 +282,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             String parEndpoint   = props.get(MockPassConstants.PARAM_PAR_ENDPOINT);
             String authEndpoint  = props.get(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
-            String callback      = getCallbackUrl(props, context);
+            String callback      = getCallbackUrl(props);
 
             KeyPair ephemeralKeyPair = MockPassUtils.generateEphemeralKeyPair();
 
@@ -385,7 +388,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
             String clientId      = props.get(OIDCAuthenticatorConstants.CLIENT_ID);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
-            String callback      = getCallbackUrl(props, context);
+            String callback      = getCallbackUrl(props);
             String codeVerifier  = (String) context.getProperty(MockPassConstants.CTX_CODE_VERIFIER);
             KeyPair keyPair = MockPassUtils.reconstructKeyPair(
                     (byte[]) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY_PUBLIC),
@@ -394,7 +397,8 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
 
             String keyAlias = getAuthenticatorConfig().getParameterMap().get(MockPassConstants.PARAM_KEY_ALIAS);
-            String clientAssertion = MockPassUtils.generateClientAssertionJwt(clientId, tokenEndpoint, keyAlias, getSigningKey());
+            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
+                    clientId, tokenEndpoint, keyAlias, getSigningKey());
             String dpop = MockPassUtils.generateDPoP(tokenEndpoint, MockPassConstants.HTTP_METHOD_POST, keyPair);
             OAuthClientRequest tokenRequest = OAuthClientRequest
                     .tokenLocation(tokenEndpoint)
@@ -643,12 +647,16 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      */
     private String readBody(HttpURLConnection conn, int status) throws IOException {
         InputStream is = (status >= 400) ? conn.getErrorStream() : conn.getInputStream();
-        if (is == null) return "";
+        if (is == null) {
+            return "";
+        }
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(is, StandardCharsets.UTF_8))) {
             StringBuilder sb = new StringBuilder();
             String line;
-            while ((line = br.readLine()) != null) sb.append(line);
+            while ((line = br.readLine()) != null) {
+                sb.append(line);
+            }
             return sb.toString();
         }
     }
@@ -754,6 +762,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                 }
             }
         }
+
         return encryptionKey;
     }
 }

@@ -66,7 +66,7 @@ singpass-v3-implementation/
 
 - JDK 11+
 - Apache Maven 3.8+
-- WSO2 Identity Server 7.2.0
+- WSO2 Identity Server 6.1.0
 - MockPass running locally on port `5156`
 - `openssl` — bundled with most Unix systems
 - IntelliJ IDEA (recommended)
@@ -220,7 +220,7 @@ cp carbon.p12 <IS_HOME>/mockpass-keystores/
 Final structure:
 
 ```
-wso2is-7.2.0/
+wso2is-6.1.0/
 └── mockpass-keystores/
     └── carbon.p12        ← contains both signing and encryption keypairs
 ```
@@ -274,7 +274,7 @@ This generates the OSGi bundle JAR file in the `target/` directory.
 Copy the generated JAR into WSO2:
 
 ```bash
-cp target/authenticator-1.0-SNAPSHOT.jar \
+cp target/com.example.wso2.mockpass.authenticator-1.0.0.jar \
    <IS_HOME>/repository/components/dropins/
 ```
 
@@ -323,16 +323,21 @@ npm start
 
 ## Step 10: Verify Custom Authenticator
 
-1. Open WSO2 Management Console: `https://localhost:9443/console`
+1. Open WSO2 Management Console: `https://localhost:9443/carbon/`
 2. Login with admin credentials
-3. Navigate to: **Connections → New Connection → Custom Authenticator (Plugin)**
-4. You should see `MockPassOIDCAuthenticator` listed
+3. Navigate to: **Main → Identity → Identity Providers → List**
+4. You should see `singpassv3` listed with `MockPassOIDCAuthenticator` configured
 
 ---
 
 ## Step 11: Configure Connection in WSO2 Console
 
-Click on `MockPassOIDCAuthenticator` and fill in the required fields:
+1. Go to `https://localhost:9443/carbon/`
+2. **Main → Identity → Identity Providers → Add**
+3. Set **Identity Provider Name**: `singpassv3`
+4. Expand **Federated Authenticators → Custom Authenticators**
+5. Tick **Enable** and **Default**, select `MockPassOIDCAuthenticator`
+6. Fill in the following fields:
 
 **Endpoints:**
 
@@ -356,6 +361,14 @@ Click on `MockPassOIDCAuthenticator` and fill in the required fields:
 |---|---|
 | `par_endpoint` | `http://localhost:5156/singpass/v3/fapi/par` |
 
+7. Click **Register**
+
+Then link to your app:
+1. **Main → Identity → Service Providers → List → testapp → Edit**
+2. **Local & Outbound Authentication → Advanced Configuration**
+3. In Step 1, under **Federated Authenticators** → Add `singpassv3`
+4. Click **Update**
+
 ---
 
 ## Module Summary
@@ -376,7 +389,7 @@ Overrides key methods of `OpenIDConnectAuthenticator`:
 
 ### `JwksServlet`
 
-A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation, following the same pattern as WSO2's own `CommonAuthenticationServlet`. On each GET request to `/mockpass/jwks.json`, it dynamically loads public keys from `carbon.p12`, converts them to JWK format using Nimbus JOSE, and returns the combined JWKS JSON — no static file involved. Keystore path, password, and aliases are passed via constructor from `CustomAuthenticatorServiceComponent`.
+A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation. On each GET request to `/mockpass/jwks.json`, it dynamically loads public keys from `carbon.p12`, converts them to JWK format using Nimbus JOSE, and returns the combined JWKS JSON — no static file involved. Keystore path, password, and aliases are passed via constructor from `CustomAuthenticatorServiceComponent`.
 
 ### `CustomAuthenticatorServiceComponent`
 

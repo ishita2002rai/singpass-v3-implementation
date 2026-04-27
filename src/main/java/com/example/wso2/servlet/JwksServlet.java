@@ -4,14 +4,11 @@ import com.example.wso2.MockPassConstants;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.KeyUse;
-import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -20,6 +17,10 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.interfaces.ECPublicKey;
+
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 /**
  * Servlet that dynamically builds and serves the JWKS (JSON Web Key Set) document
@@ -92,16 +93,15 @@ public class JwksServlet extends HttpServlet {
                     .build();
 
             JSONArray keys = new JSONArray();
-            keys.add(sigJwk.toJSONObject());
-            keys.add(encJwk.toJSONObject());
+            keys.put(new JSONObject(sigJwk.toJSONObject()));
+            keys.put(new JSONObject(encJwk.toJSONObject()));
 
             JSONObject jwks = new JSONObject();
             jwks.put("keys", keys);
-
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
             PrintWriter writer = response.getWriter();
-            writer.write(jwks.toJSONString());
+            writer.write(jwks.toString());
             writer.flush();
 
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException e) {

@@ -5,24 +5,12 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.example</groupId>
-    <artifactId>authenticator</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <groupId>com.example.wso2</groupId>
+    <artifactId>com.example.wso2.mockpass.authenticator</artifactId>
+    <version>1.0.0</version>
     <packaging>bundle</packaging>
 
-
     <repositories>
-
-        <repository>
-            <id>wso2-s-nexus</id>
-            <name>Support Nexus Repository of WSO2</name>
-            <url>https://support-maven.wso2.org/nexus/content/repositories/updates-2.0/</url>
-            <releases>
-                <enabled>true</enabled>
-                <updatePolicy>daily</updatePolicy>
-                <checksumPolicy>ignore</checksumPolicy>
-            </releases>
-        </repository>
 
         <repository>
             <id>wso2-public</id>
@@ -34,57 +22,56 @@
             </releases>
         </repository>
 
-        <repository>
-            <id>wso2-releases</id>
-            <url>https://maven.wso2.org/nexus/content/repositories/releases/</url>
-        </repository>
-
-        <repository>
-            <id>wso2-nexus</id>
-            <url>https://maven.wso2.org/nexus/content/groups/wso2-public/</url>
-        </repository>
-
-        <repository>
-            <id>central</id>
-            <url>https://repo.maven.apache.org/maven2</url>
-        </repository>
-
     </repositories>
 
     <dependencies>
 
         <dependency>
-            <groupId>org.wso2.carbon.identity</groupId>
-            <artifactId>oidc-authenticator</artifactId>
-            <version>5.12.36</version>
+            <groupId>org.wso2.carbon.identity.outbound.auth.oidc</groupId>
+            <artifactId>org.wso2.carbon.identity.application.authenticator.oidc</artifactId>
+            <version>5.11.5</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.wso2.orbit.com.nimbusds</groupId>
+                    <artifactId>nimbus-jose-jwt</artifactId>
+                </exclusion>
+            </exclusions>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.wso2.carbon.identity.framework</groupId>
-            <artifactId>authentication-framework</artifactId>
-            <version>7.8.586.43</version>
+            <artifactId>org.wso2.carbon.identity.application.authentication.framework</artifactId>
+            <version>5.25.92</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.wso2.carbon.identity.framework</groupId>
-            <artifactId>identity-application-common</artifactId>
-            <version>7.8.586</version>
+            <artifactId>org.wso2.carbon.identity.application.common</artifactId>
+            <version>5.25.92</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
-            <groupId>org.wso2.carbon.identity</groupId>
-            <artifactId>identity-core</artifactId>
-            <version>7.8.586.45</version>
+            <groupId>org.wso2.carbon.identity.framework</groupId>
+            <artifactId>org.wso2.carbon.identity.core</artifactId>
+            <version>5.25.92</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
-            <groupId>com.nimbusds</groupId>
+            <groupId>org.wso2.carbon</groupId>
+            <artifactId>org.wso2.carbon.core</artifactId>
+            <version>4.9.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wso2.orbit.com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>8.20</version>
+            <version>7.9.0.wso2v1</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -130,7 +117,7 @@
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>5.1.2</version>
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
@@ -156,11 +143,14 @@
                             org.osgi.service.http,
                             org.wso2.carbon.identity.application.authentication.framework.*,
                             org.wso2.carbon.identity.application.common.*,
+                            org.wso2.carbon.identity.application.authenticator.oidc.*,
+                            org.wso2.carbon.core.util,
                             org.apache.commons.logging,
                             *
                         </Import-Package>
 
                         <_dsannotations>com.example.wso2.*</_dsannotations>
+                        <_dsannotations-options>version;minimum=1.2</_dsannotations-options>
 
                         <Require-Capability>
                             osgi.extender;filter:="(osgi.extender=osgi.component)"
@@ -172,6 +162,11 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <source>11</source>
+                    <target>11</target>
+                </configuration>
             </plugin>
 
         </plugins>
