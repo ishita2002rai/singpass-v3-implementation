@@ -1,21 +1,23 @@
 package com.example.wso2;
 
 /**
- * Compile-time constants shared across the MockPass OIDC authenticator classes.
+ * Compile-time constants shared across the Singpass OIDC authenticator classes.
  *
- * <p>All fields are {@code public static final} so that {@link MockPassOIDCAuthenticator}
- * and {@link utils.MockPassUtils} can reference them without any runtime cost.
+ * <p>All fields are {@code public static final} so that {@link SingpassOIDCAuthenticator}
+ * and {@link utils.SingpassUtils} can reference them without any runtime cost.
  */
-public final class MockPassConstants {
+public final class SingpassConstants {
 
-    private MockPassConstants() {
+    private SingpassConstants() {
         // Utility class – do not instantiate.
     }
 
     // ── Identity ──────────────────────────────────────────────────────────────
 
-    public static final String AUTHENTICATOR_NAME          = "MockPassOIDCAuthenticator";
-    public static final String AUTHENTICATOR_FRIENDLY_NAME = "MockPass OIDC Authenticator";
+//    public static final String AUTHENTICATOR_NAME          = "SingpassOIDCAuthenticator";
+//    public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass OIDC Authenticator";
+    public static final String AUTHENTICATOR_NAME          = "SingpassOIDCAuthenticator";
+    public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass OIDC Authenticator";
 
     // ── OAuth / OIDC ──────────────────────────────────────────────────────────
 

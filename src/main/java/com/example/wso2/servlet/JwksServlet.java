@@ -1,6 +1,6 @@
 package com.example.wso2.servlet;
 
-import com.example.wso2.MockPassConstants;
+import com.example.wso2.SingpassConstants;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.KeyUse;
@@ -69,9 +69,9 @@ public class JwksServlet extends HttpServlet {
             throws IOException {
 
         try {
-            String carbonHome = System.getProperty(MockPassConstants.SYSTEM_PROPERTY_CARBON_HOME);
+            String carbonHome = System.getProperty(SingpassConstants.SYSTEM_PROPERTY_CARBON_HOME);
 
-            KeyStore keyStore = KeyStore.getInstance(MockPassConstants.KEYSTORE_TYPE);
+            KeyStore keyStore = KeyStore.getInstance(SingpassConstants.KEYSTORE_TYPE);
             try (FileInputStream fis = new FileInputStream(carbonHome + keystorePath)) {
                 keyStore.load(fis, keystorePassword.toCharArray());
             }
@@ -81,7 +81,7 @@ public class JwksServlet extends HttpServlet {
             ECKey sigJwk = new ECKey.Builder(Curve.P_256, sigPublicKey)
                     .keyUse(KeyUse.SIGNATURE)
                     .keyID(sigAlias)
-                    .algorithm(new com.nimbusds.jose.Algorithm(MockPassConstants.SIG_ALGORITHM))
+                    .algorithm(new com.nimbusds.jose.Algorithm(SingpassConstants.SIG_ALGORITHM))
                     .build();
 
             ECPublicKey encPublicKey = (ECPublicKey) keyStore
@@ -89,7 +89,7 @@ public class JwksServlet extends HttpServlet {
             ECKey encJwk = new ECKey.Builder(Curve.P_256, encPublicKey)
                     .keyUse(KeyUse.ENCRYPTION)
                     .keyID(encAlias)
-                    .algorithm(new com.nimbusds.jose.Algorithm(MockPassConstants.ENC_ALGORITHM))
+                    .algorithm(new com.nimbusds.jose.Algorithm(SingpassConstants.ENC_ALGORITHM))
                     .build();
 
             JSONArray keys = new JSONArray();
@@ -105,13 +105,15 @@ public class JwksServlet extends HttpServlet {
             writer.flush();
 
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
-            LOG.error("[MockPass] Failed to load keystore or certificates for JWKS generation", e);
+            LOG.error("[Singpass] Failed to load keystore or certificates for JWKS generation", e);
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
                     "Failed to load keystore");
         } catch (IOException e) {
-            LOG.error("[MockPass] Failed to read keystore file for JWKS generation", e);
+            LOG.error("[Singpass] Failed to read keystore file for JWKS generation", e);
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
                     "Failed to read keystore");
         }
     }
 }
+
+

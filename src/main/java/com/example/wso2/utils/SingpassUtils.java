@@ -1,6 +1,6 @@
 package com.example.wso2.utils;
 
-import com.example.wso2.MockPassConstants;
+import com.example.wso2.SingpassConstants;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -40,15 +40,15 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * Stateless cryptographic and encoding utility methods for the MockPass OIDC authenticator.
+ * Stateless cryptographic and encoding utility methods for the Singpass OIDC authenticator.
  *
  * <p>All methods are {@code public static}. This class must not be instantiated.
  */
-public final class MockPassUtils {
+public final class SingpassUtils {
 
-    private static final Log LOG = LogFactory.getLog(MockPassUtils.class);
+    private static final Log LOG = LogFactory.getLog(SingpassUtils.class);
 
-    private MockPassUtils() {
+    private SingpassUtils() {
         // Utility class – do not instantiate.
     }
     /**
@@ -77,7 +77,7 @@ public final class MockPassUtils {
      */
     public static String computeCodeChallenge(String codeVerifier) throws NoSuchAlgorithmException {
 
-        byte[] hash = MessageDigest.getInstance(MockPassConstants.HASH_ALGORITHM_SHA256)
+        byte[] hash = MessageDigest.getInstance(SingpassConstants.HASH_ALGORITHM_SHA256)
                 .digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
@@ -92,8 +92,8 @@ public final class MockPassUtils {
      */
     public static KeyPair generateEphemeralKeyPair() throws GeneralSecurityException {
 
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance(MockPassConstants.KEY_ALGORITHM_EC);
-        kpg.initialize(new ECGenParameterSpec(MockPassConstants.EC_CURVE));
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance(SingpassConstants.KEY_ALGORITHM_EC);
+        kpg.initialize(new ECGenParameterSpec(SingpassConstants.EC_CURVE));
         return kpg.generateKeyPair();
     }
 
@@ -116,17 +116,17 @@ public final class MockPassUtils {
         long nowSec = System.currentTimeMillis() / 1000;
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim(MockPassConstants.CLAIM_HTU, endpoint)
-                .claim(MockPassConstants.CLAIM_HTM, method)
+                .claim(SingpassConstants.CLAIM_HTU, endpoint)
+                .claim(SingpassConstants.CLAIM_HTM, method)
                 .issueTime(new Date(nowSec * 1000))
-                .expirationTime(new Date((nowSec + MockPassConstants.DPOP_TTL_SEC) * 1000))
+                .expirationTime(new Date((nowSec + SingpassConstants.DPOP_TTL_SEC) * 1000))
                 .jwtID(UUID.randomUUID().toString())
                 .build();
 
         ECKey publicJwk = buildPublicEcJwk((ECPublicKey) keyPair.getPublic());
 
         JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                .type(new JOSEObjectType(MockPassConstants.DPOP_JWT_TYPE))
+                .type(new JOSEObjectType(SingpassConstants.DPOP_JWT_TYPE))
                 .jwk(publicJwk.toPublicJWK())
                 .build();
 
@@ -156,8 +156,8 @@ public final class MockPassUtils {
 
         long now      = System.currentTimeMillis();
 
-        String audience = tokenEndpoint.endsWith(MockPassConstants.TOKEN_PATH_SEGMENT)
-                ? tokenEndpoint.substring(0, tokenEndpoint.length() - MockPassConstants.TOKEN_PATH_SEGMENT.length())
+        String audience = tokenEndpoint.endsWith(SingpassConstants.TOKEN_PATH_SEGMENT)
+                ? tokenEndpoint.substring(0, tokenEndpoint.length() - SingpassConstants.TOKEN_PATH_SEGMENT.length())
                 : tokenEndpoint;
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
@@ -165,7 +165,7 @@ public final class MockPassUtils {
                 .subject(clientId)
                 .audience(audience)
                 .issueTime(new Date(now))
-                .expirationTime(new Date(now + MockPassConstants.JWT_TTL_MS))
+                .expirationTime(new Date(now + SingpassConstants.JWT_TTL_MS))
                 .jwtID(UUID.randomUUID().toString())
                 .build();
 
@@ -199,14 +199,14 @@ public final class MockPassUtils {
                                               String alias)
             throws GeneralSecurityException, IOException {
 
-        String carbonHome   = System.getProperty(MockPassConstants.SYSTEM_PROPERTY_CARBON_HOME);
+        String carbonHome   = System.getProperty(SingpassConstants.SYSTEM_PROPERTY_CARBON_HOME);
         String keystorePath = carbonHome + keystoreFile;
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("[MockPass] Loading keystore: " + keystorePath + ", alias=" + alias);
+            LOG.debug("[Singpass] Loading keystore: " + keystorePath + ", alias=" + alias);
         }
 
-        KeyStore ks = KeyStore.getInstance(MockPassConstants.KEYSTORE_TYPE);
+        KeyStore ks = KeyStore.getInstance(SingpassConstants.KEYSTORE_TYPE);
         try (FileInputStream fis = new FileInputStream(keystorePath)) {
             ks.load(fis, password.toCharArray());
             Key key = ks.getKey(alias, password.toCharArray());
@@ -236,7 +236,7 @@ public final class MockPassUtils {
         byte[] privateKeyBytes = CryptoUtil.getDefaultCryptoUtil()
                 .base64DecodeAndDecrypt(encryptedPrivateKey);
 
-        KeyFactory keyFactory = KeyFactory.getInstance(MockPassConstants.KEY_ALGORITHM_EC);
+        KeyFactory keyFactory = KeyFactory.getInstance(SingpassConstants.KEY_ALGORITHM_EC);
         PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
         PublicKey publicKey  = keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
 

@@ -6,7 +6,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.example.wso2</groupId>
-    <artifactId>com.example.wso2.mockpass.authenticator</artifactId>
+    <artifactId>singpass-authenticator</artifactId>
     <version>1.0.0</version>
     <packaging>bundle</packaging>
 
@@ -122,8 +122,8 @@
                 <configuration>
                     <instructions>
 
-                        <Bundle-SymbolicName>com.example.wso2.mockpass.authenticator</Bundle-SymbolicName>
-                        <Bundle-Name>MockPass OIDC Authenticator</Bundle-Name>
+                        <Bundle-SymbolicName>com.example.wso2.singpass.authenticator</Bundle-SymbolicName>
+                        <Bundle-Name>Singpass OIDC Authenticator</Bundle-Name>
                         <Bundle-Version>${project.version}</Bundle-Version>
 
                         <Private-Package>

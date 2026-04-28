@@ -1,7 +1,7 @@
 package com.example.wso2.internal;
 
-import com.example.wso2.MockPassConstants;
-import com.example.wso2.MockPassOIDCAuthenticator;
+import com.example.wso2.SingpassConstants;
+import com.example.wso2.SingpassOIDCAuthenticator;
 import com.example.wso2.servlet.JwksServlet;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -26,12 +26,12 @@ import javax.servlet.Servlet;
 
 
 /**
- * OSGi Declarative Services component that activates the MockPass OIDC
+ * OSGi Declarative Services component that activates the Singpass OIDC
  * authenticator bundle.
  *
  * <p>On activation this component:
  * <ol>
- *   <li>Registers {@link MockPassOIDCAuthenticator} as an
+ *   <li>Registers {@link SingpassOIDCAuthenticator} as an
  *       {@link ApplicationAuthenticator} OSGi service, making it visible to
  *       WSO2's authentication framework.</li>
  *   <li>Reads keystore configuration from {@code deployment.toml} via
@@ -39,7 +39,7 @@ import javax.servlet.Servlet;
  *       so public keys are served dynamically from the keystore without a static file.</li>
  *   <li>Registers {@link JwksServlet} via the OSGi {@link HttpService} at
  *       {@code /singpass/jwks.json}, serving the client's public JWKS so
- *       MockPass (Singpass v3) can fetch it without an external HTTP server.</li>
+ *       Singpass (Singpass v3) can fetch it without an external HTTP server.</li>
  * </ol>
  *
  * <p>{@link HttpService} is injected by OSGi DS via {@link #setHttpService}
@@ -55,7 +55,7 @@ public class CustomAuthenticatorServiceComponent {
     private static final Log log = LogFactory.getLog(CustomAuthenticatorServiceComponent.class);
 
     /**
-     * OSGi service registration handle for the {@link MockPassOIDCAuthenticator}.
+     * OSGi service registration handle for the {@link SingpassOIDCAuthenticator}.
      * Retained so the service can be cleanly unregistered on bundle deactivation.
      */
     private ServiceRegistration<ApplicationAuthenticator> serviceRegistration;
@@ -73,7 +73,7 @@ public class CustomAuthenticatorServiceComponent {
      *
      * <p><b>Execution order:</b>
      * <ol>
-     *   <li>Registers {@link MockPassOIDCAuthenticator} as an {@link ApplicationAuthenticator}
+     *   <li>Registers {@link SingpassOIDCAuthenticator} as an {@link ApplicationAuthenticator}
      *       OSGi service so WSO2's authentication framework can discover it.</li>
      *   <li>Reads keystore configuration ({@code keystore}, {@code keystore_password},
      *       {@code key_alias}, {@code encryption_key_alias}) from {@code deployment.toml}
@@ -91,35 +91,35 @@ public class CustomAuthenticatorServiceComponent {
         try {
             BundleContext bundleContext = ctxt.getBundleContext();
 
-            MockPassOIDCAuthenticator authenticator = new MockPassOIDCAuthenticator();
+            SingpassOIDCAuthenticator authenticator = new SingpassOIDCAuthenticator();
             serviceRegistration = bundleContext
                     .registerService(ApplicationAuthenticator.class, authenticator, null);
-            log.info("[MockPass] Authenticator registered successfully");
+            log.info("[Singpass] Authenticator registered successfully");
 
 
             AuthenticatorConfig config = FileBasedConfigurationBuilder.getInstance()
-                    .getAuthenticatorBean(MockPassConstants.AUTHENTICATOR_NAME);
+                    .getAuthenticatorBean(SingpassConstants.AUTHENTICATOR_NAME);
 
             if (config == null || config.getParameterMap() == null) {
-                log.error("[MockPass] Authenticator config not found — JWKS servlet NOT registered");
+                log.error("[Singpass] Authenticator config not found — JWKS servlet NOT registered");
                 return;
             }
 
             Map<String, String> params  = config.getParameterMap();
-            String keystorePath         = params.get(MockPassConstants.PARAM_KEYSTORE);
-            String keystorePassword     = params.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD);
-            String sigAlias             = params.get(MockPassConstants.PARAM_KEY_ALIAS);
-            String encAlias             = params.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS);
+            String keystorePath         = params.get(SingpassConstants.PARAM_KEYSTORE);
+            String keystorePassword     = params.get(SingpassConstants.PARAM_KEYSTORE_PASSWORD);
+            String sigAlias             = params.get(SingpassConstants.PARAM_KEY_ALIAS);
+            String encAlias             = params.get(SingpassConstants.PARAM_ENCRYPTION_KEY_ALIAS);
 
             Servlet jwksServlet = new ContextPathServletAdaptor(
                     new JwksServlet(keystorePath, keystorePassword, sigAlias, encAlias),
-                    MockPassConstants.JWKS_SERVLET_URL);
+                    SingpassConstants.JWKS_SERVLET_URL);
             httpService.registerServlet(
-                    MockPassConstants.JWKS_SERVLET_URL, jwksServlet, null, null);
-            log.info("[MockPass] JWKS servlet registered at: " + MockPassConstants.JWKS_SERVLET_URL);
+                    SingpassConstants.JWKS_SERVLET_URL, jwksServlet, null, null);
+            log.info("[Singpass] JWKS servlet registered at: " + SingpassConstants.JWKS_SERVLET_URL);
 
         } catch (Exception e) {
-            log.error("[MockPass] Error while activating MockPass authenticator bundle", e);
+            log.error("[Singpass] Error while activating Singpass authenticator bundle", e);
         }
     }
 
@@ -135,9 +135,9 @@ public class CustomAuthenticatorServiceComponent {
             serviceRegistration.unregister();
         }
         if (httpService != null) {
-            httpService.unregister(MockPassConstants.JWKS_SERVLET_URL);
+            httpService.unregister(SingpassConstants.JWKS_SERVLET_URL);
         }
-        log.info("[MockPass] MockPass authenticator bundle deactivated");
+        log.info("[Singpass] Singpass authenticator bundle deactivated");
     }
 
     /**

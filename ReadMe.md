@@ -235,7 +235,7 @@ Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 
 ```toml
 [[authentication.custom_authenticator]]
-name = "MockPassOIDCAuthenticator"
+name = "SingpassOIDCAuthenticator"
 parameters.keystore = "/singpass-keystores/carbon.p12"
 parameters.keystore_password = "wso2carbon"
 parameters.key_alias = "mockpass-key"

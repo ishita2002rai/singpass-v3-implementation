@@ -1,6 +1,6 @@
 package com.example.wso2;
 
-import com.example.wso2.utils.MockPassUtils;
+import com.example.wso2.utils.SingpassUtils;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.crypto.ECDHDecrypter;
 import com.nimbusds.jwt.EncryptedJWT;
@@ -75,12 +75,12 @@ import javax.servlet.http.HttpServletResponse;
  *       only allows {@code [A-Za-z0-9/+_-=.]+} in the state parameter.</li>
  * </ul>
  *
- * <p>All constants are defined in {@link MockPassConstants}.
- * Cryptographic and encoding helpers live in {@link MockPassUtils}.
+ * <p>All constants are defined in {@link SingpassConstants}.
+ * Cryptographic and encoding helpers live in {@link SingpassUtils}.
  */
-public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
+public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
-    private static final Log LOG = LogFactory.getLog(MockPassOIDCAuthenticator.class);
+    private static final Log LOG = LogFactory.getLog(SingpassOIDCAuthenticator.class);
 
 
     /**
@@ -101,21 +101,21 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      * Returns the unique internal name of this authenticator.
      * Used by WSO2 to identify and load the authenticator from the OSGi registry.
      *
-     * @return the authenticator name defined in {@link MockPassConstants#AUTHENTICATOR_NAME}.
+     * @return the authenticator name defined in {@link SingpassConstants#AUTHENTICATOR_NAME}.
      */
     @Override
     public String getName() {
-        return MockPassConstants.AUTHENTICATOR_NAME;
+        return SingpassConstants.AUTHENTICATOR_NAME;
     }
 
     /**
      * Returns the human-readable display name shown in the WSO2 management console.
      *
-     * @return the friendly name defined in {@link MockPassConstants#AUTHENTICATOR_FRIENDLY_NAME}.
+     * @return the friendly name defined in {@link SingpassConstants#AUTHENTICATOR_FRIENDLY_NAME}.
      */
     @Override
     public String getFriendlyName() {
-        return MockPassConstants.AUTHENTICATOR_FRIENDLY_NAME;
+        return SingpassConstants.AUTHENTICATOR_FRIENDLY_NAME;
     }
 
     // ── Configuration properties ──────────────────────────────────────────────
@@ -146,10 +146,10 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
         properties.removeIf(p -> "IsBasicAuthEnabled".equals(p.getName()));
 
         Property par = new Property();
-        par.setName(MockPassConstants.PARAM_PAR_ENDPOINT);
-        par.setDisplayName(MockPassConstants.PAR_ENDPOINT_DISPLAY_NAME);
+        par.setName(SingpassConstants.PARAM_PAR_ENDPOINT);
+        par.setDisplayName(SingpassConstants.PAR_ENDPOINT_DISPLAY_NAME);
         par.setRequired(true);
-        par.setDescription(MockPassConstants.PAR_ENDPOINT_DESCRIPTION);
+        par.setDescription(SingpassConstants.PAR_ENDPOINT_DESCRIPTION);
         properties.add(par);
 
         return properties;
@@ -187,9 +187,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      */
     @Override
     public String getContextIdentifier(HttpServletRequest request) {
-        String state = request.getParameter(MockPassConstants.PARAM_STATE);
-        if (state != null && state.contains(MockPassConstants.STATE_DELIMITER)) {
-            return state.split(MockPassConstants.STATE_DELIMITER_REGEX)[0];
+        String state = request.getParameter(SingpassConstants.PARAM_STATE);
+        if (state != null && state.contains(SingpassConstants.STATE_DELIMITER)) {
+            return state.split(SingpassConstants.STATE_DELIMITER_REGEX)[0];
         }
         return super.getContextIdentifier(request);
     }
@@ -221,12 +221,12 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      */
     @Override
     public boolean canHandle(HttpServletRequest request) {
-        String code  = request.getParameter(MockPassConstants.PARAM_CODE);
-        String state = request.getParameter(MockPassConstants.PARAM_STATE);
+        String code  = request.getParameter(SingpassConstants.PARAM_CODE);
+        String state = request.getParameter(SingpassConstants.PARAM_STATE);
 
         return code != null
                 && state != null
-                && state.endsWith(MockPassConstants.STATE_SINGPASSV3_SUFFIX);
+                && state.endsWith(SingpassConstants.STATE_SINGPASSV3_SUFFIX);
     }
 
     // ── PAR flow initiation ───────────────────────────────────────────────────
@@ -272,42 +272,42 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             throws AuthenticationFailedException {
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("[MockPass] initiateAuthenticationRequest invoked");
+            LOG.debug("[Singpass] initiateAuthenticationRequest invoked");
         }
 
         try {
             Map<String, String> props = context.getAuthenticatorProperties();
 
             String clientId      = props.get(OIDCAuthenticatorConstants.CLIENT_ID);
-            String parEndpoint   = props.get(MockPassConstants.PARAM_PAR_ENDPOINT);
+            String parEndpoint   = props.get(SingpassConstants.PARAM_PAR_ENDPOINT);
             String authEndpoint  = props.get(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
             String callback      = getCallbackUrl(props);
 
-            KeyPair ephemeralKeyPair = MockPassUtils.generateEphemeralKeyPair();
+            KeyPair ephemeralKeyPair = SingpassUtils.generateEphemeralKeyPair();
 
             String encryptedPrivateKey = CryptoUtil.getDefaultCryptoUtil()
                     .encryptAndBase64Encode(ephemeralKeyPair.getPrivate().getEncoded());
 
-            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY_PUBLIC,
+            context.setProperty(SingpassConstants.CTX_EPHEMERAL_KEY_PUBLIC,
                     ephemeralKeyPair.getPublic().getEncoded());
-            context.setProperty(MockPassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED,
+            context.setProperty(SingpassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED,
                     encryptedPrivateKey);
 
             String nonce      = UUID.randomUUID().toString();
-            context.setProperty(getName() + MockPassConstants.OIDC_FEDERATION_NONCE, nonce);
-            String stateValue = context.getContextIdentifier() + MockPassConstants.STATE_SINGPASSV3_SUFFIX;
+            context.setProperty(getName() + SingpassConstants.OIDC_FEDERATION_NONCE, nonce);
+            String stateValue = context.getContextIdentifier() + SingpassConstants.STATE_SINGPASSV3_SUFFIX;
 
 
-            String codeVerifier  = MockPassUtils.generateCodeVerifier();
-            String codeChallenge = MockPassUtils.computeCodeChallenge(codeVerifier);
-            context.setProperty(MockPassConstants.CTX_CODE_VERIFIER, codeVerifier);
+            String codeVerifier  = SingpassUtils.generateCodeVerifier();
+            String codeChallenge = SingpassUtils.computeCodeChallenge(codeVerifier);
+            context.setProperty(SingpassConstants.CTX_CODE_VERIFIER, codeVerifier);
 
             String keyAlias = getAuthenticatorConfig().getParameterMap()
-                    .get(MockPassConstants.PARAM_KEY_ALIAS);
-            String dpop = MockPassUtils.generateDPoP(
-                    parEndpoint, MockPassConstants.HTTP_METHOD_POST, ephemeralKeyPair);
-            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
+                    .get(SingpassConstants.PARAM_KEY_ALIAS);
+            String dpop = SingpassUtils.generateDPoP(
+                    parEndpoint, SingpassConstants.HTTP_METHOD_POST, ephemeralKeyPair);
+            String clientAssertion = SingpassUtils.generateClientAssertionJwt(
                     clientId, tokenEndpoint, keyAlias, getSigningKey());
 
             String requestUri = pushAuthorizationRequest(
@@ -315,28 +315,28 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                     codeChallenge, clientAssertion, dpop);
 
             String authUrl = authEndpoint
-                    + "?" + MockPassConstants.PARAM_KEY_CLIENT_ID
-                    + "=" + MockPassUtils.encode(clientId)
-                    + "&" + MockPassConstants.PARAM_KEY_REQUEST_URI
-                    + "=" + MockPassUtils.encode(requestUri);
+                    + "?" + SingpassConstants.PARAM_KEY_CLIENT_ID
+                    + "=" + SingpassUtils.encode(clientId)
+                    + "&" + SingpassConstants.PARAM_KEY_REQUEST_URI
+                    + "=" + SingpassUtils.encode(requestUri);
 
             if (LOG.isDebugEnabled()) {
-                LOG.debug("[MockPass] Redirecting to authorization endpoint: " + authEndpoint);
+                LOG.debug("[Singpass] Redirecting to authorization endpoint: " + authEndpoint);
             }
             response.sendRedirect(authUrl);
 
         } catch (GeneralSecurityException e) {
             throw new AuthenticationFailedException(
-                    "EC key generation or keystore access failed during MockPass PAR initiation", e);
+                    "EC key generation or keystore access failed during Singpass PAR initiation", e);
         } catch (JOSEException e) {
             throw new AuthenticationFailedException(
-                    "JWT signing failed during MockPass PAR initiation", e);
+                    "JWT signing failed during Singpass PAR initiation", e);
         } catch (CryptoException e) {
             throw new AuthenticationFailedException(
                     "Failed to encrypt ephemeral DPoP private key for secure context storage", e);
         } catch (IOException e) {
             throw new AuthenticationFailedException(
-                    "Network I/O error during MockPass PAR request or browser redirect", e);
+                    "Network I/O error during Singpass PAR request or browser redirect", e);
         }
     }
 
@@ -389,30 +389,30 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             String clientId      = props.get(OIDCAuthenticatorConstants.CLIENT_ID);
             String tokenEndpoint = props.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
             String callback      = getCallbackUrl(props);
-            String codeVerifier  = (String) context.getProperty(MockPassConstants.CTX_CODE_VERIFIER);
-            KeyPair keyPair = MockPassUtils.reconstructKeyPair(
-                    (byte[]) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY_PUBLIC),
-                    (String) context.getProperty(MockPassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED)
+            String codeVerifier  = (String) context.getProperty(SingpassConstants.CTX_CODE_VERIFIER);
+            KeyPair keyPair = SingpassUtils.reconstructKeyPair(
+                    (byte[]) context.getProperty(SingpassConstants.CTX_EPHEMERAL_KEY_PUBLIC),
+                    (String) context.getProperty(SingpassConstants.CTX_EPHEMERAL_KEY_ENCRYPTED)
             );
 
 
-            String keyAlias = getAuthenticatorConfig().getParameterMap().get(MockPassConstants.PARAM_KEY_ALIAS);
-            String clientAssertion = MockPassUtils.generateClientAssertionJwt(
+            String keyAlias = getAuthenticatorConfig().getParameterMap().get(SingpassConstants.PARAM_KEY_ALIAS);
+            String clientAssertion = SingpassUtils.generateClientAssertionJwt(
                     clientId, tokenEndpoint, keyAlias, getSigningKey());
-            String dpop = MockPassUtils.generateDPoP(tokenEndpoint, MockPassConstants.HTTP_METHOD_POST, keyPair);
+            String dpop = SingpassUtils.generateDPoP(tokenEndpoint, SingpassConstants.HTTP_METHOD_POST, keyPair);
             OAuthClientRequest tokenRequest = OAuthClientRequest
                     .tokenLocation(tokenEndpoint)
                     .setGrantType(GrantType.AUTHORIZATION_CODE)
                     .setRedirectURI(callback)
                     .setCode(authzResponse.getCode())
                     .setClientId(clientId)
-                    .setParameter(MockPassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE,
-                            MockPassConstants.CLIENT_ASSERTION_TYPE)
-                    .setParameter(MockPassConstants.PARAM_KEY_CLIENT_ASSERTION, clientAssertion)
-                    .setParameter(MockPassConstants.PARAM_KEY_CODE_VERIFIER, codeVerifier)
+                    .setParameter(SingpassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE,
+                            SingpassConstants.CLIENT_ASSERTION_TYPE)
+                    .setParameter(SingpassConstants.PARAM_KEY_CLIENT_ASSERTION, clientAssertion)
+                    .setParameter(SingpassConstants.PARAM_KEY_CODE_VERIFIER, codeVerifier)
                     .buildBodyMessage();
 
-            tokenRequest.addHeader(MockPassConstants.HTTP_HEADER_DPOP, dpop);
+            tokenRequest.addHeader(SingpassConstants.HTTP_HEADER_DPOP, dpop);
             return tokenRequest;
 
         } catch (OAuthSystemException e) {
@@ -568,40 +568,40 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                                             String dpop)
             throws AuthenticationFailedException, IOException {
 
-        String body = MockPassConstants.PARAM_KEY_CLIENT_ID
-                + "=" + MockPassUtils.encode(clientId)
-                + "&" + MockPassConstants.PARAM_KEY_REDIRECT_URI
-                + "=" + MockPassUtils.encode(callback)
-                + "&" + MockPassConstants.PARAM_KEY_RESPONSE_TYPE
-                + "=" + MockPassUtils.encode(MockPassConstants.RESPONSE_TYPE_CODE)
-                + "&" + MockPassConstants.PARAM_KEY_SCOPE
-                + "=" + MockPassUtils.encode(MockPassConstants.SCOPE_OPENID_UINFIN)
-                + "&" + MockPassConstants.PARAM_STATE
-                + "=" + MockPassUtils.encode(state)
-                + "&" + MockPassConstants.PARAM_KEY_NONCE
-                + "=" + MockPassUtils.encode(nonce)
-                + "&" + MockPassConstants.PARAM_KEY_CODE_CHALLENGE
-                + "=" + MockPassUtils.encode(codeChallenge)
-                + "&" + MockPassConstants.PARAM_KEY_CODE_CHALLENGE_METHOD
-                + "=" + MockPassUtils.encode(MockPassConstants.CODE_CHALLENGE_METHOD)
-                + "&" + MockPassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE
-                + "=" + MockPassUtils.encode(MockPassConstants.CLIENT_ASSERTION_TYPE)
-                + "&" + MockPassConstants.PARAM_KEY_CLIENT_ASSERTION
-                + "=" + MockPassUtils.encode(clientAssertion);
+        String body = SingpassConstants.PARAM_KEY_CLIENT_ID
+                + "=" + SingpassUtils.encode(clientId)
+                + "&" + SingpassConstants.PARAM_KEY_REDIRECT_URI
+                + "=" + SingpassUtils.encode(callback)
+                + "&" + SingpassConstants.PARAM_KEY_RESPONSE_TYPE
+                + "=" + SingpassUtils.encode(SingpassConstants.RESPONSE_TYPE_CODE)
+                + "&" + SingpassConstants.PARAM_KEY_SCOPE
+                + "=" + SingpassUtils.encode(SingpassConstants.SCOPE_OPENID_UINFIN)
+                + "&" + SingpassConstants.PARAM_STATE
+                + "=" + SingpassUtils.encode(state)
+                + "&" + SingpassConstants.PARAM_KEY_NONCE
+                + "=" + SingpassUtils.encode(nonce)
+                + "&" + SingpassConstants.PARAM_KEY_CODE_CHALLENGE
+                + "=" + SingpassUtils.encode(codeChallenge)
+                + "&" + SingpassConstants.PARAM_KEY_CODE_CHALLENGE_METHOD
+                + "=" + SingpassUtils.encode(SingpassConstants.CODE_CHALLENGE_METHOD)
+                + "&" + SingpassConstants.PARAM_KEY_CLIENT_ASSERTION_TYPE
+                + "=" + SingpassUtils.encode(SingpassConstants.CLIENT_ASSERTION_TYPE)
+                + "&" + SingpassConstants.PARAM_KEY_CLIENT_ASSERTION
+                + "=" + SingpassUtils.encode(clientAssertion);
 
         byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
 
         HttpURLConnection conn = (HttpURLConnection) new URL(parEndpoint).openConnection();
         try {
-            conn.setConnectTimeout(MockPassConstants.PAR_CONNECT_TIMEOUT_MS);
-            conn.setReadTimeout(MockPassConstants.PAR_READ_TIMEOUT_MS);
-            conn.setRequestMethod(MockPassConstants.HTTP_METHOD_POST);
+            conn.setConnectTimeout(SingpassConstants.PAR_CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(SingpassConstants.PAR_READ_TIMEOUT_MS);
+            conn.setRequestMethod(SingpassConstants.HTTP_METHOD_POST);
             conn.setDoOutput(true);
-            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_CONTENT_TYPE,
-                    MockPassConstants.CONTENT_TYPE_FORM);
-            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_CONTENT_LENGTH,
+            conn.setRequestProperty(SingpassConstants.HTTP_HEADER_CONTENT_TYPE,
+                    SingpassConstants.CONTENT_TYPE_FORM);
+            conn.setRequestProperty(SingpassConstants.HTTP_HEADER_CONTENT_LENGTH,
                     String.valueOf(bodyBytes.length));
-            conn.setRequestProperty(MockPassConstants.HTTP_HEADER_DPOP, dpop);
+            conn.setRequestProperty(SingpassConstants.HTTP_HEADER_DPOP, dpop);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(bodyBytes);
@@ -619,7 +619,7 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
 
             try {
                 return new JSONObject(responseBody)
-                        .getString(MockPassConstants.PARAM_KEY_REQUEST_URI);
+                        .getString(SingpassConstants.PARAM_KEY_REQUEST_URI);
             } catch (JSONException e) {
                 throw new AuthenticationFailedException(
                         "PAR response did not contain a valid 'request_uri' field. " +
@@ -706,9 +706,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      *
      * <p>Configuration parameters used:
      * <ul>
-     *   <li>{@link MockPassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
-     *   <li>{@link MockPassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
-     *   <li>{@link MockPassConstants#PARAM_KEY_ALIAS} – alias of the EC key entry.</li>
+     *   <li>{@link SingpassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
+     *   <li>{@link SingpassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
+     *   <li>{@link SingpassConstants#PARAM_KEY_ALIAS} – alias of the EC key entry.</li>
      * </ul>
      *
      * @return the {@link ECPrivateKey} for signing client assertion JWTs.
@@ -721,10 +721,10 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             synchronized (this) {
                 if (signingKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
-                    signingKey = MockPassUtils.loadPrivateKey(
-                            p.get(MockPassConstants.PARAM_KEYSTORE),
-                            p.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD),
-                            p.get(MockPassConstants.PARAM_KEY_ALIAS));
+                    signingKey = SingpassUtils.loadPrivateKey(
+                            p.get(SingpassConstants.PARAM_KEYSTORE),
+                            p.get(SingpassConstants.PARAM_KEYSTORE_PASSWORD),
+                            p.get(SingpassConstants.PARAM_KEY_ALIAS));
                 }
             }
         }
@@ -740,9 +740,9 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      *
      * <p>Configuration parameters used:
      * <ul>
-     *   <li>{@link MockPassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
-     *   <li>{@link MockPassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
-     *   <li>{@link MockPassConstants#PARAM_ENCRYPTION_KEY_ALIAS} – alias of the EC key entry.</li>
+     *   <li>{@link SingpassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
+     *   <li>{@link SingpassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
+     *   <li>{@link SingpassConstants#PARAM_ENCRYPTION_KEY_ALIAS} – alias of the EC key entry.</li>
      * </ul>
      *
      * @return the {@link ECPrivateKey} for decrypting JWE ID tokens.
@@ -755,10 +755,10 @@ public class MockPassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             synchronized (this) {
                 if (encryptionKey == null) {
                     Map<String, String> p = getAuthenticatorConfig().getParameterMap();
-                    encryptionKey = MockPassUtils.loadPrivateKey(
-                            p.get(MockPassConstants.PARAM_KEYSTORE),
-                            p.get(MockPassConstants.PARAM_KEYSTORE_PASSWORD),
-                            p.get(MockPassConstants.PARAM_ENCRYPTION_KEY_ALIAS));
+                    encryptionKey = SingpassUtils.loadPrivateKey(
+                            p.get(SingpassConstants.PARAM_KEYSTORE),
+                            p.get(SingpassConstants.PARAM_KEYSTORE_PASSWORD),
+                            p.get(SingpassConstants.PARAM_ENCRYPTION_KEY_ALIAS));
                 }
             }
         }
