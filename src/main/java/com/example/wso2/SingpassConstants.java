@@ -14,8 +14,6 @@ public final class SingpassConstants {
 
     // ── Identity ──────────────────────────────────────────────────────────────
 
-//    public static final String AUTHENTICATOR_NAME          = "SingpassOIDCAuthenticator";
-//    public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass OIDC Authenticator";
     public static final String AUTHENTICATOR_NAME          = "SingpassOIDCAuthenticator";
     public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass OIDC Authenticator";
 
