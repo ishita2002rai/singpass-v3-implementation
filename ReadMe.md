@@ -39,9 +39,9 @@ singpass-v3-implementation/
 │       ├── servlet/
 │       │   └── JwksServlet.java                          ← dynamically serves JWKS at /singpass/jwks.json
 │       ├── utils/
-│       │   └── MockPassUtils.java                        ← cryptographic helpers
-│       ├── MockPassConstants.java                        ← shared constants
-│       └── MockPassOIDCAuthenticator.java                ← custom authenticator
+│       │   └── SingpassUtils.java                        ← cryptographic helpers
+│       ├── SingpassConstants.java                        ← shared constants
+│       └── SingpassOIDCAuthenticator.java                ← custom authenticator
 ├── pom.xml
 └── .gitignore
 ```
@@ -130,7 +130,7 @@ singpass-v3-implementation/
               "id_token": "eyJ..."    ← encrypted JWE
             }
         │
-        decrypts JWE id_token using carbon.p12 (mockpass-enc-key alias)
+        decrypts JWE id_token using carbon.p12 (singpass-enc-key alias)
         extracts inner SignedJWT
         validates nonce ✓
         extracts claims (NRIC / uinfin)
@@ -169,13 +169,13 @@ Signs the `client_assertion` JWT sent to MockPass at both the PAR and token endp
 
 ```bash
 keytool -genkeypair \
-  -alias mockpass-key \
+  -alias singpass-key \
   -keyalg EC \
   -groupname secp256r1 \
   -keystore carbon.p12 \
   -storetype PKCS12 \
   -storepass wso2carbon \
-  -dname "CN=mockpass-signing"
+  -dname "CN=singpass-signing"
 ```
 
 ### Generate encryption keypair
@@ -190,7 +190,7 @@ keytool -genkeypair \
   -keystore carbon.p12 \
   -storetype PKCS12 \
   -storepass wso2carbon \
-  -dname "CN=mockpass-encryption"
+  -dname "CN=singpass-encryption"
 ```
 
 ### Verify both keypairs are in the keystore
@@ -202,8 +202,8 @@ keytool -list -keystore carbon.p12 -storetype PKCS12 -storepass wso2carbon
 Expected output:
 ```
 Your keystore contains 2 entries
-mockpass-enc-key, ...
-mockpass-key, ...
+singpass-enc-key, ...
+singpass-key, ...
 ```
 
 ---
@@ -213,15 +213,15 @@ mockpass-key, ...
 Create the required folder inside your WSO2 directory and copy the keystore there:
 
 ```bash
-mkdir <IS_HOME>/mockpass-keystores
-cp carbon.p12 <IS_HOME>/mockpass-keystores/
+mkdir <IS_HOME>/singpass-keystores
+cp carbon.p12 <IS_HOME>/singpass-keystores/
 ```
 
 Final structure:
 
 ```
 wso2is-6.1.0/
-└── mockpass-keystores/
+└── singpass-keystores/
     └── carbon.p12        ← contains both signing and encryption keypairs
 ```
 
@@ -238,8 +238,8 @@ Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 name = "SingpassOIDCAuthenticator"
 parameters.keystore = "/singpass-keystores/carbon.p12"
 parameters.keystore_password = "wso2carbon"
-parameters.key_alias = "mockpass-key"
-parameters.encryption_key_alias = "mockpass-enc-key"
+parameters.key_alias = "singpass-key"
+parameters.encryption_key_alias = "singpass-enc-key"
 
 [[resource.access_control]]
 context = "(.*)/singpass/jwks(.*)"
@@ -248,8 +248,8 @@ http_method = "GET"
 ```
 
 This tells WSO2:
-- Which alias to use for signing the client assertion JWT (`mockpass-key`)
-- Which alias to use for decrypting the JWE ID token (`mockpass-enc-key`)
+- Which alias to use for signing the client assertion JWT (`singpass-key`)
+- Which alias to use for decrypting the JWE ID token (`singpass-enc-key`)
 - Both aliases live in the same `carbon.p12` keystore — one keystore, one password, two aliases
 - The JWKS endpoint is publicly accessible without authentication
 
@@ -274,7 +274,7 @@ This generates the OSGi bundle JAR file in the `target/` directory.
 Copy the generated JAR into WSO2:
 
 ```bash
-cp target/com.example.wso2.mockpass.authenticator-1.0.0.jar \
+cp target/singpass-authenticator-1.0.0.jar \
    <IS_HOME>/repository/components/dropins/
 ```
 
@@ -326,7 +326,7 @@ npm start
 1. Open WSO2 Management Console: `https://localhost:9443/carbon/`
 2. Login with admin credentials
 3. Navigate to: **Main → Identity → Identity Providers → List**
-4. You should see `singpassv3` listed with `MockPassOIDCAuthenticator` configured
+4. You should see `singpassv3` listed with `SingpassOIDCAuthenticator` configured
 
 ---
 
@@ -336,7 +336,7 @@ npm start
 2. **Main → Identity → Identity Providers → Add**
 3. Set **Identity Provider Name**: `singpassv3`
 4. Expand **Federated Authenticators → Custom Authenticators**
-5. Tick **Enable** and **Default**, select `MockPassOIDCAuthenticator`
+5. Tick **Enable** and **Default**, select `SingpassOIDCAuthenticator`
 6. Fill in the following fields:
 
 **Endpoints:**
@@ -373,7 +373,7 @@ Then link to your app:
 
 ## Module Summary
 
-### `MockPassOIDCAuthenticator`
+### `SingpassOIDCAuthenticator`
 
 Overrides key methods of `OpenIDConnectAuthenticator`:
 
@@ -393,7 +393,7 @@ A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation. O
 
 ### `CustomAuthenticatorServiceComponent`
 
-OSGi DS component that activates the bundle. Registers the `MockPassOIDCAuthenticator` as an `ApplicationAuthenticator` OSGi service. Reads keystore configuration from `deployment.toml` via `FileBasedConfigurationBuilder` and passes it to `JwksServlet` via constructor. Registers the servlet via `HttpService` using the same pattern as WSO2's `FrameworkServiceComponent`.
+OSGi DS component that activates the bundle. Registers the `SingpassOIDCAuthenticator` as an `ApplicationAuthenticator` OSGi service. Reads keystore configuration from `deployment.toml` via `FileBasedConfigurationBuilder` and passes it to `JwksServlet` via constructor. Registers the servlet via `HttpService` using the same pattern as WSO2's `FrameworkServiceComponent`.
 
 ---
 
@@ -405,7 +405,7 @@ Without PAR, all sensitive parameters (state, nonce, PKCE, client assertion) go 
 
 **Why one keystore with two keypairs?**
 
-Both the signing key (`mockpass-key`) and encryption key (`mockpass-enc-key`) live in the same `carbon.p12` keystore — one file, one password, two aliases. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token.
+Both the signing key (`singpass-key`) and encryption key (`singpass-enc-key`) live in the same `carbon.p12` keystore — one file, one password, two aliases. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token.
 
 **Why is the JWKS hosted inside WSO2 instead of a separate server?**
 
