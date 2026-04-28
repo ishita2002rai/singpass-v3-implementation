@@ -3,7 +3,7 @@ package com.example.wso2;
 /**
  * Compile-time constants shared across the Singpass OIDC authenticator classes.
  *
- * <p>All fields are {@code public static final} so that {@link SingpassOIDCAuthenticator}
+ * <p>All fields are {@code public static final} so that {@link SingpassV3OIDCAuthenticator}
  * and {@link utils.SingpassUtils} can reference them without any runtime cost.
  */
 public final class SingpassConstants {
@@ -14,8 +14,8 @@ public final class SingpassConstants {
 
     // ── Identity ──────────────────────────────────────────────────────────────
 
-    public static final String AUTHENTICATOR_NAME          = "SingpassOIDCAuthenticator";
-    public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass OIDC Authenticator";
+    public static final String AUTHENTICATOR_NAME          = "SingpassV3OIDCAuthenticator";
+    public static final String AUTHENTICATOR_FRIENDLY_NAME = "Singpass V3 OIDC Authenticator";
 
     // ── OAuth / OIDC ──────────────────────────────────────────────────────────
 
@@ -59,10 +59,10 @@ public final class SingpassConstants {
 
     // ── Authenticator config parameter names ──────────────────────────────────
 
-    public static final String PARAM_PAR_ENDPOINT            = "par_endpoint";
+    public static final String PARAM_PAR_ENDPOINT         = "par_endpoint";
     public static final String PARAM_KEYSTORE             = "keystore";
     public static final String PARAM_KEYSTORE_PASSWORD    = "keystore_password";
-    public static final String PARAM_KEY_ALIAS            = "key_alias";
+    public static final String PARAM_SIGNING_KEY_ALIAS    = "signing_key_alias";
     public static final String PARAM_ENCRYPTION_KEY_ALIAS = "encryption_key_alias";
     // ── PAR endpoint UI metadata ──────────────────────────────────────────────
 

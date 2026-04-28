@@ -78,9 +78,9 @@ import javax.servlet.http.HttpServletResponse;
  * <p>All constants are defined in {@link SingpassConstants}.
  * Cryptographic and encoding helpers live in {@link SingpassUtils}.
  */
-public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
+public class SingpassV3OIDCAuthenticator extends OpenIDConnectAuthenticator {
 
-    private static final Log LOG = LogFactory.getLog(SingpassOIDCAuthenticator.class);
+    private static final Log LOG = LogFactory.getLog(SingpassV3OIDCAuthenticator.class);
 
 
     /**
@@ -304,7 +304,7 @@ public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             context.setProperty(SingpassConstants.CTX_CODE_VERIFIER, codeVerifier);
 
             String keyAlias = getAuthenticatorConfig().getParameterMap()
-                    .get(SingpassConstants.PARAM_KEY_ALIAS);
+                    .get(SingpassConstants.PARAM_SIGNING_KEY_ALIAS);
             String dpop = SingpassUtils.generateDPoP(
                     parEndpoint, SingpassConstants.HTTP_METHOD_POST, ephemeralKeyPair);
             String clientAssertion = SingpassUtils.generateClientAssertionJwt(
@@ -396,7 +396,7 @@ public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
             );
 
 
-            String keyAlias = getAuthenticatorConfig().getParameterMap().get(SingpassConstants.PARAM_KEY_ALIAS);
+            String keyAlias = getAuthenticatorConfig().getParameterMap().get(SingpassConstants.PARAM_SIGNING_KEY_ALIAS);
             String clientAssertion = SingpassUtils.generateClientAssertionJwt(
                     clientId, tokenEndpoint, keyAlias, getSigningKey());
             String dpop = SingpassUtils.generateDPoP(tokenEndpoint, SingpassConstants.HTTP_METHOD_POST, keyPair);
@@ -708,7 +708,7 @@ public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
      * <ul>
      *   <li>{@link SingpassConstants#PARAM_KEYSTORE} – path relative to carbon.home.</li>
      *   <li>{@link SingpassConstants#PARAM_KEYSTORE_PASSWORD} – keystore and key password.</li>
-     *   <li>{@link SingpassConstants#PARAM_KEY_ALIAS} – alias of the EC key entry.</li>
+     *   <li>{@link SingpassConstants#PARAM_SIGNING_KEY_ALIAS} – alias of the EC key entry.</li>
      * </ul>
      *
      * @return the {@link ECPrivateKey} for signing client assertion JWTs.
@@ -724,7 +724,7 @@ public class SingpassOIDCAuthenticator extends OpenIDConnectAuthenticator {
                     signingKey = SingpassUtils.loadPrivateKey(
                             p.get(SingpassConstants.PARAM_KEYSTORE),
                             p.get(SingpassConstants.PARAM_KEYSTORE_PASSWORD),
-                            p.get(SingpassConstants.PARAM_KEY_ALIAS));
+                            p.get(SingpassConstants.PARAM_SIGNING_KEY_ALIAS));
                 }
             }
         }

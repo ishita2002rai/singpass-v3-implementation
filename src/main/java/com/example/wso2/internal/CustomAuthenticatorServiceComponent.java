@@ -1,7 +1,7 @@
 package com.example.wso2.internal;
 
 import com.example.wso2.SingpassConstants;
-import com.example.wso2.SingpassOIDCAuthenticator;
+import com.example.wso2.SingpassV3OIDCAuthenticator;
 import com.example.wso2.servlet.JwksServlet;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -31,7 +31,7 @@ import javax.servlet.Servlet;
  *
  * <p>On activation this component:
  * <ol>
- *   <li>Registers {@link SingpassOIDCAuthenticator} as an
+ *   <li>Registers {@link SingpassV3OIDCAuthenticator} as an
  *       {@link ApplicationAuthenticator} OSGi service, making it visible to
  *       WSO2's authentication framework.</li>
  *   <li>Reads keystore configuration from {@code deployment.toml} via
@@ -55,7 +55,7 @@ public class CustomAuthenticatorServiceComponent {
     private static final Log log = LogFactory.getLog(CustomAuthenticatorServiceComponent.class);
 
     /**
-     * OSGi service registration handle for the {@link SingpassOIDCAuthenticator}.
+     * OSGi service registration handle for the {@link SingpassV3OIDCAuthenticator}.
      * Retained so the service can be cleanly unregistered on bundle deactivation.
      */
     private ServiceRegistration<ApplicationAuthenticator> serviceRegistration;
@@ -73,7 +73,7 @@ public class CustomAuthenticatorServiceComponent {
      *
      * <p><b>Execution order:</b>
      * <ol>
-     *   <li>Registers {@link SingpassOIDCAuthenticator} as an {@link ApplicationAuthenticator}
+     *   <li>Registers {@link SingpassV3OIDCAuthenticator} as an {@link ApplicationAuthenticator}
      *       OSGi service so WSO2's authentication framework can discover it.</li>
      *   <li>Reads keystore configuration ({@code keystore}, {@code keystore_password},
      *       {@code key_alias}, {@code encryption_key_alias}) from {@code deployment.toml}
@@ -91,7 +91,7 @@ public class CustomAuthenticatorServiceComponent {
         try {
             BundleContext bundleContext = ctxt.getBundleContext();
 
-            SingpassOIDCAuthenticator authenticator = new SingpassOIDCAuthenticator();
+            SingpassV3OIDCAuthenticator authenticator = new SingpassV3OIDCAuthenticator();
             serviceRegistration = bundleContext
                     .registerService(ApplicationAuthenticator.class, authenticator, null);
             log.info("[Singpass] Authenticator registered successfully");
@@ -108,7 +108,7 @@ public class CustomAuthenticatorServiceComponent {
             Map<String, String> params  = config.getParameterMap();
             String keystorePath         = params.get(SingpassConstants.PARAM_KEYSTORE);
             String keystorePassword     = params.get(SingpassConstants.PARAM_KEYSTORE_PASSWORD);
-            String sigAlias             = params.get(SingpassConstants.PARAM_KEY_ALIAS);
+            String sigAlias             = params.get(SingpassConstants.PARAM_SIGNING_KEY_ALIAS);
             String encAlias             = params.get(SingpassConstants.PARAM_ENCRYPTION_KEY_ALIAS);
 
             Servlet jwksServlet = new ContextPathServletAdaptor(

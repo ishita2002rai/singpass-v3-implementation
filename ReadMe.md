@@ -41,7 +41,7 @@ singpass-v3-implementation/
 │       ├── utils/
 │       │   └── SingpassUtils.java                        ← cryptographic helpers
 │       ├── SingpassConstants.java                        ← shared constants
-│       └── SingpassOIDCAuthenticator.java                ← custom authenticator
+│       └── SingpassV3OIDCAuthenticator.java              ← custom authenticator
 ├── pom.xml
 └── .gitignore
 ```
@@ -169,12 +169,12 @@ Signs the `client_assertion` JWT sent to MockPass at both the PAR and token endp
 
 ```bash
 keytool -genkeypair \
-  -alias singpass-key \
+  -alias singpass-sign-key \
   -keyalg EC \
   -groupname secp256r1 \
   -keystore carbon.p12 \
   -storetype PKCS12 \
-  -storepass wso2carbon \
+  -storepass <YOUR_KEYSTORE_PASSWORD> \
   -dname "CN=singpass-signing"
 ```
 
@@ -184,26 +184,26 @@ Decrypts the JWE-wrapped ID token returned by MockPass. MockPass encrypts the ID
 
 ```bash
 keytool -genkeypair \
-  -alias mockpass-enc-key \
+  -alias singpass-enc-key \
   -keyalg EC \
   -groupname secp256r1 \
   -keystore carbon.p12 \
   -storetype PKCS12 \
-  -storepass wso2carbon \
+  -storepass <YOUR_KEYSTORE_PASSWORD> \
   -dname "CN=singpass-encryption"
 ```
 
 ### Verify both keypairs are in the keystore
 
 ```bash
-keytool -list -keystore carbon.p12 -storetype PKCS12 -storepass wso2carbon
+keytool -list -keystore carbon.p12 -storetype PKCS12 -storepass <YOUR_KEYSTORE_PASSWORD>
 ```
 
 Expected output:
 ```
 Your keystore contains 2 entries
 singpass-enc-key, ...
-singpass-key, ...
+singpass-sign-key, ...
 ```
 
 ---
@@ -235,10 +235,10 @@ Add the following to `<IS_HOME>/repository/conf/deployment.toml`:
 
 ```toml
 [[authentication.custom_authenticator]]
-name = "SingpassOIDCAuthenticator"
+name = "SingpassV3OIDCAuthenticator"
 parameters.keystore = "/singpass-keystores/carbon.p12"
-parameters.keystore_password = "wso2carbon"
-parameters.key_alias = "singpass-key"
+parameters.keystore_password = "<YOUR_KEYSTORE_PASSWORD>"
+parameters.signing_key_alias = "singpass-sign-key"
 parameters.encryption_key_alias = "singpass-enc-key"
 
 [[resource.access_control]]
@@ -248,7 +248,7 @@ http_method = "GET"
 ```
 
 This tells WSO2:
-- Which alias to use for signing the client assertion JWT (`singpass-key`)
+- Which alias to use for signing the client assertion JWT (`singpass-sign-key`)
 - Which alias to use for decrypting the JWE ID token (`singpass-enc-key`)
 - Both aliases live in the same `carbon.p12` keystore — one keystore, one password, two aliases
 - The JWKS endpoint is publicly accessible without authentication
@@ -274,8 +274,7 @@ This generates the OSGi bundle JAR file in the `target/` directory.
 Copy the generated JAR into WSO2:
 
 ```bash
-cp target/singpass-authenticator-1.0.0.jar \
-   <IS_HOME>/repository/components/dropins/
+cp target/*.jar <IS_HOME>/repository/components/dropins/
 ```
 
 WSO2 will auto-deploy this authenticator on next startup.
@@ -326,7 +325,7 @@ npm start
 1. Open WSO2 Management Console: `https://localhost:9443/carbon/`
 2. Login with admin credentials
 3. Navigate to: **Main → Identity → Identity Providers → List**
-4. You should see `singpassv3` listed with `SingpassOIDCAuthenticator` configured
+4. You should see `singpassv3` listed with `SingpassV3OIDCAuthenticator` configured
 
 ---
 
@@ -336,7 +335,7 @@ npm start
 2. **Main → Identity → Identity Providers → Add**
 3. Set **Identity Provider Name**: `singpassv3`
 4. Expand **Federated Authenticators → Custom Authenticators**
-5. Tick **Enable** and **Default**, select `SingpassOIDCAuthenticator`
+5. Tick **Enable** and **Default**, select `SingpassV3OIDCAuthenticator`
 6. Fill in the following fields:
 
 **Endpoints:**
@@ -373,7 +372,7 @@ Then link to your app:
 
 ## Module Summary
 
-### `SingpassOIDCAuthenticator`
+### `SingpassV3OIDCAuthenticator`
 
 Overrides key methods of `OpenIDConnectAuthenticator`:
 
@@ -393,7 +392,7 @@ A simple `HttpServlet` registered via OSGi `HttpService` at bundle activation. O
 
 ### `CustomAuthenticatorServiceComponent`
 
-OSGi DS component that activates the bundle. Registers the `SingpassOIDCAuthenticator` as an `ApplicationAuthenticator` OSGi service. Reads keystore configuration from `deployment.toml` via `FileBasedConfigurationBuilder` and passes it to `JwksServlet` via constructor. Registers the servlet via `HttpService` using the same pattern as WSO2's `FrameworkServiceComponent`.
+OSGi DS component that activates the bundle. Registers the `SingpassV3OIDCAuthenticator` as an `ApplicationAuthenticator` OSGi service. Reads keystore configuration from `deployment.toml` via `FileBasedConfigurationBuilder` and passes it to `JwksServlet` via constructor. Registers the servlet via `HttpService` using the same pattern as WSO2's `FrameworkServiceComponent`.
 
 ---
 
@@ -405,7 +404,7 @@ Without PAR, all sensitive parameters (state, nonce, PKCE, client assertion) go 
 
 **Why one keystore with two keypairs?**
 
-Both the signing key (`singpass-key`) and encryption key (`singpass-enc-key`) live in the same `carbon.p12` keystore — one file, one password, two aliases. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token.
+Both the signing key (`singpass-sign-key`) and encryption key (`singpass-enc-key`) live in the same `carbon.p12` keystore — one file, one password, two aliases. The signing key proves your identity to MockPass via the `client_assertion` JWT. The encryption key decrypts the JWE-wrapped ID token.
 
 **Why is the JWKS hosted inside WSO2 instead of a separate server?**
 
